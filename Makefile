@@ -17,6 +17,12 @@ MACHINE ?= $(shell uname -m)
 ARFLAGS = ${EXTRA_ARFLAGS} rs
 STRIPFLAGS = -S -x
 
+ifdef ROCKSDB_BC_ON_DCPMM
+LDFLAGS += -lmemkind
+CXXFLAGS += -DBC_ON_DCPMM
+endif
+
+
 # Transform parallel LOG output into something more readable.
 perl_command = perl -n \
   -e '@a=split("\t",$$_,-1); $$t=$$a[8];'				\

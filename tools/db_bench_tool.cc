@@ -38,6 +38,11 @@
 #include "db/version_set.h"
 #include "hdfs/env_hdfs.h"
 #include "dcpmm/env_dcpmm.h"
+
+#ifdef BC_ON_DCPMM
+#include "dcpmm/cache_dcpmm.h"
+#endif
+
 #include "monitoring/histogram.h"
 #include "monitoring/statistics.h"
 #include "options/cf_options.h"
@@ -765,6 +770,12 @@ DEFINE_string(trace_file, "", "Trace workload to a file. ");
 
 DEFINE_bool(dcpmm_enable_wal, false,
              "Store WAL file to dcpmm device and use pmdk to write/read it. ");
+
+#ifdef BC_ON_DCPMM
+DEFINE_string(dcpmm_block_cache_path, "",
+            "If not empty string,"
+            "a DCPMM block cache will be used in this path");
+#endif
 
 static enum rocksdb::CompressionType StringToCompressionType(const char* ctype) {
   assert(ctype);
@@ -2379,9 +2390,17 @@ class Benchmark {
       }
       return cache;
     } else {
-      return NewLRUCache((size_t)capacity, FLAGS_cache_numshardbits,
-                         false /*strict_capacity_limit*/,
-                         FLAGS_cache_high_pri_pool_ratio);
+      LRUCacheOptions lruOptions;
+#ifdef BC_ON_DCPMM
+      auto dcpmm_memory_allocator = std::make_shared<DCPMMMemoryAllocator>(
+                                      FLAGS_dcpmm_block_cache_path);
+      lruOptions.memory_allocator = dcpmm_memory_allocator;
+#endif
+      lruOptions.capacity = capacity;
+      lruOptions.num_shard_bits = FLAGS_cache_numshardbits;
+      lruOptions.strict_capacity_limit = false;
+      lruOptions.high_pri_pool_ratio = FLAGS_cache_high_pri_pool_ratio;
+      return NewLRUCache(std::move(lruOptions));
     }
   }
 
