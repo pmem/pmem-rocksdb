@@ -1484,4 +1484,17 @@ Status NewHdfsEnv(Env** hdfs_env, const std::string& fsname);
 // This is a factory method for TimedEnv defined in utilities/env_timed.cc.
 Env* NewTimedEnv(Env* base_env);
 
+// extra options for DCPMMEnv
+struct DCPMMEnvOptions {
+  // the initial allocation size of wal file
+  // default 256 MB
+  size_t wal_init_size = 256 << 20;
+  // expand wal file with this size every time it is not enough
+  // default 64 MB
+  size_t wal_size_addition = 64 << 20;
+};
+
+// Returns a new environment that uses Intel DCPMM
+Env* NewDCPMMEnv(const DCPMMEnvOptions& options, Env* base_env = nullptr);
+
 }  // namespace rocksdb

@@ -196,6 +196,11 @@ LIB_SOURCES += utilities/env_librados.cc
 LDFLAGS += -lrados
 endif
 
+ifdef ROCKSDB_WAL_ON_DCPMM
+LDFLAGS += -L/usr/local/lib/ -L/usr/local/lib64/ -lpmem
+CXXFLAGS += -I/usr/local/include -DWAL_ON_DCPMM
+endif
+
 AM_LINK = $(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 # detect what platform we're building on
 dummy := $(shell (export ROCKSDB_ROOT="$(CURDIR)"; export PORTABLE="$(PORTABLE)"; "$(CURDIR)/build_tools/build_detect_platform" "$(CURDIR)/make_config.mk"))

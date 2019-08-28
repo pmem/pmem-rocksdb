@@ -37,6 +37,7 @@
 #include "db/malloc_stats.h"
 #include "db/version_set.h"
 #include "hdfs/env_hdfs.h"
+#include "dcpmm/env_dcpmm.h"
 #include "monitoring/histogram.h"
 #include "monitoring/statistics.h"
 #include "options/cf_options.h"
@@ -761,6 +762,9 @@ DEFINE_bool(use_stderr_info_logger, false,
             "Write info logs to stderr instead of to LOG file. ");
 
 DEFINE_string(trace_file, "", "Trace workload to a file. ");
+
+DEFINE_bool(dcpmm_enable_wal, false,
+             "Store WAL file to dcpmm device and use pmdk to write/read it. ");
 
 static enum rocksdb::CompressionType StringToCompressionType(const char* ctype) {
   assert(ctype);
@@ -6242,6 +6246,10 @@ int db_bench_tool(int argc, char** argv) {
 
   if (!FLAGS_hdfs.empty()) {
     FLAGS_env  = new rocksdb::HdfsEnv(FLAGS_hdfs);
+  }
+
+  if (FLAGS_dcpmm_enable_wal) {
+    FLAGS_env = NewDCPMMEnv(rocksdb::DCPMMEnvOptions());
   }
 
   if (!strcasecmp(FLAGS_compaction_fadvice.c_str(), "NONE"))
