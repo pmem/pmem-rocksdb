@@ -1,3 +1,13 @@
+## This rocksdb is derived from facebook rocksdb v6.2.2.
+
+It depends on memkind and pmdk library, please install them before compiling the rocksdb.
+
+To use the new features, please compile with below options:
+
+$ make release -j ROCKSDB_BC_ON_DCPMM=1 ROCKSDB_KVS_ON_DCPMM=1 ROCKSDB_WAL_ON_DCPMM=1
+
+To benchmark it, please refer to the script kvs_write.sh and opensource_write.sh
+
 ## RocksDB: A Persistent Key-Value Store for Flash and RAM Storage
 
 [![Linux/Mac Build Status](https://travis-ci.org/facebook/rocksdb.svg?branch=master)](https://travis-ci.org/facebook/rocksdb)
