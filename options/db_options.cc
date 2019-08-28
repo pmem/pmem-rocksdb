@@ -87,6 +87,12 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       two_write_queues(options.two_write_queues),
       manual_wal_flush(options.manual_wal_flush),
       atomic_flush(options.atomic_flush),
+#ifdef KVS_ON_DCPMM
+      dcpmm_kvs_mmapped_file_fullpath(options.dcpmm_kvs_mmapped_file_fullpath),
+      dcpmm_kvs_mmapped_file_size(options.dcpmm_kvs_mmapped_file_size),
+      dcpmm_kvs_value_thres(options.dcpmm_kvs_value_thres),
+      dcpmm_compress_value(options.dcpmm_compress_value),
+#endif
       avoid_unnecessary_blocking_io(options.avoid_unnecessary_blocking_io) {
 }
 

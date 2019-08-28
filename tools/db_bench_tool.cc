@@ -768,13 +768,29 @@ DEFINE_bool(use_stderr_info_logger, false,
 
 DEFINE_string(trace_file, "", "Trace workload to a file. ");
 
+#ifdef WAL_ON_DCPMM
 DEFINE_bool(dcpmm_enable_wal, false,
              "Store WAL file to dcpmm device and use pmdk to write/read it. ");
+#endif
 
 #ifdef BC_ON_DCPMM
 DEFINE_string(dcpmm_block_cache_path, "",
             "If not empty string,"
             "a DCPMM block cache will be used in this path");
+#endif
+
+#ifdef KVS_ON_DCPMM
+DEFINE_string(dcpmm_kvs_mmapped_file_fullpath, "",
+              "If not empty, use it for allocating dcpmm space. ");
+
+DEFINE_int64(dcpmm_kvs_mmapped_file_size, 1024*1024*1024,
+             "Size of dcpmm mmaped file. ");
+
+DEFINE_int64(dcpmm_kvs_value_thres, 64,
+             "Use kvs for values larger than it. ");
+
+DEFINE_bool(dcpmm_compress_value, true,
+             "Compress the value in DCPMM with snappy. ");
 #endif
 
 static enum rocksdb::CompressionType StringToCompressionType(const char* ctype) {
@@ -3708,6 +3724,13 @@ void VerifyDBFromDB(std::string& truth_db_name) {
           FLAGS_rate_limiter_auto_tuned));
     }
 
+#ifdef KVS_ON_DCPMM
+    options.dcpmm_kvs_mmapped_file_fullpath = FLAGS_dcpmm_kvs_mmapped_file_fullpath;
+    options.dcpmm_kvs_mmapped_file_size = FLAGS_dcpmm_kvs_mmapped_file_size;
+    options.dcpmm_kvs_value_thres = FLAGS_dcpmm_kvs_value_thres;
+    options.dcpmm_compress_value = FLAGS_dcpmm_compress_value;
+#endif
+
     options.listeners.emplace_back(listener_);
     if (FLAGS_num_multi_db <= 1) {
       OpenDb(options, FLAGS_db, &db_);
@@ -6267,9 +6290,11 @@ int db_bench_tool(int argc, char** argv) {
     FLAGS_env  = new rocksdb::HdfsEnv(FLAGS_hdfs);
   }
 
+#ifdef WAL_ON_DCPMM
   if (FLAGS_dcpmm_enable_wal) {
     FLAGS_env = NewDCPMMEnv(rocksdb::DCPMMEnvOptions());
   }
+#endif
 
   if (!strcasecmp(FLAGS_compaction_fadvice.c_str(), "NONE"))
     FLAGS_compaction_fadvice_e = rocksdb::Options::NONE;

@@ -31,6 +31,10 @@
 #include "rocksdb/status.h"
 #include "rocksdb/write_batch_base.h"
 
+#ifdef KVS_ON_DCPMM
+#include "dcpmm/kvs_dcpmm.h"
+#endif
+
 namespace rocksdb {
 
 class Slice;
@@ -363,6 +367,9 @@ class WriteBatch : public WriteBatchBase {
   std::string rep_;  // See comment in write_batch.cc for the format of rep_
 
   // Intentionally copyable
+#ifdef KVS_ON_DCPMM
+  mutable std::vector<struct pobj_action *> act_;
+#endif
 };
 
 }  // namespace rocksdb

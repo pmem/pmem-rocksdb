@@ -23,6 +23,9 @@
 #include <memory>
 #include <string>
 #include <vector>
+#ifdef KVS_ON_DCPMM
+#include <libpmemobj.h>
+#endif
 #include "rocksdb/status.h"
 #include "rocksdb/thread_status.h"
 
@@ -139,7 +142,11 @@ class Env {
     uint64_t size_bytes;
   };
 
+#ifdef KVS_ON_DCPMM
+  Env() : pm_pool(nullptr), pool_uuid_lo(0), thread_status_updater_(nullptr) {}
+#else
   Env() : thread_status_updater_(nullptr) {}
+#endif
 
   virtual ~Env();
 
@@ -501,6 +508,10 @@ class Env {
     return Status::NotSupported();
   }
 
+#ifdef KVS_ON_DCPMM
+  PMEMobjpool *pm_pool;
+  uint64_t pool_uuid_lo;
+#endif
   // If you're adding methods here, remember to add them to EnvWrapper too.
 
  protected:

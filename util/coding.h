@@ -20,6 +20,9 @@
 
 #include "rocksdb/write_batch.h"
 #include "port/port.h"
+#ifdef KVS_ON_DCPMM
+#include "dcpmm/kvs_dcpmm.h"
+#endif
 
 // Some processors does not allow unaligned access to memory
 #if defined(__sparc)
@@ -304,6 +307,15 @@ inline void PutLengthPrefixedSlice(std::string* dst, const Slice& value) {
   PutVarint32(dst, static_cast<uint32_t>(value.size()));
   dst->append(value.data(), value.size());
 }
+
+#ifdef KVS_ON_DCPMM
+inline void PutLengthHdrPrefixedSlice(std::string* dst, struct KVSHdrBase* hdr,
+                                      const Slice& value) {
+  PutVarint32(dst, static_cast<uint32_t>(value.size() + sizeof(*hdr)));
+  dst->append((char*)hdr, sizeof(*hdr));
+  dst->append(value.data(), value.size());
+}
+#endif
 
 inline void PutLengthPrefixedSliceParts(std::string* dst,
                                         const SliceParts& slice_parts) {

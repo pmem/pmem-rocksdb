@@ -63,6 +63,10 @@
 #include "util/string_util.h"
 #include "util/sync_point.h"
 
+#ifdef KVS_ON_DCPMM
+#include "dcpmm/kvs_dcpmm.h"
+#endif
+
 namespace rocksdb {
 
 const char* GetCompactionReasonString(CompactionReason compaction_reason) {
@@ -815,6 +819,9 @@ Status CompactionJob::Install(const MutableCFOptions& mutable_cf_options) {
 void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
   assert(sub_compact != nullptr);
 
+#ifdef KVS_ON_DCPMM
+  size_t dcpmm_extra_value_size = 0;
+#endif
   uint64_t prev_cpu_micros = env_->NowCPUNanos() / 1000;
 
   ColumnFamilyData* cfd = sub_compact->compaction->column_family_data();
@@ -933,8 +940,24 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
     }
     assert(sub_compact->builder != nullptr);
     assert(sub_compact->current_output() != nullptr);
+#ifdef KVS_ON_DCPMM
+    // TODO(Peifeng) dump value content to SST if no available DCPMM space.
+    if ((sub_compact->compaction->output_level() >= 5) &&
+        (KVSGetEncoding(value.data()) != kEncodingRawCompressed) &&
+        (KVSGetEncoding(value.data()) != kEncodingRawUncompressed)) {
+      auto add = std::bind(&TableBuilder::Add, sub_compact->builder.get(),
+                           key, std::placeholders::_1);
+      KVSDumpFromValueRef(value.data(), add);
+    } else {
+      sub_compact->builder->Add(key, value);
+      dcpmm_extra_value_size += KVSGetExtraValueSize(value);
+    }
+    sub_compact->current_output_file_size = sub_compact->builder->FileSize() +
+                                            dcpmm_extra_value_size;
+#else
     sub_compact->builder->Add(key, value);
     sub_compact->current_output_file_size = sub_compact->builder->FileSize();
+#endif
     sub_compact->current_output()->meta.UpdateBoundaries(
         key, c_iter->ikey().sequence);
     sub_compact->num_output_records++;
@@ -980,6 +1003,9 @@ void CompactionJob::ProcessKeyValueCompaction(SubcompactionState* sub_compact) {
                                      &range_del_out_stats, next_key);
       RecordDroppedKeys(range_del_out_stats,
                         &sub_compact->compaction_job_stats);
+#ifdef KVS_ON_DCPMM
+      dcpmm_extra_value_size = 0;
+#endif
     }
   }
 

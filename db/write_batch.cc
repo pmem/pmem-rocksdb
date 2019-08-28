@@ -58,6 +58,10 @@
 #include "util/string_util.h"
 #include "util/util.h"
 
+#ifdef KVS_ON_DCPMM
+#include "dcpmm/kvs_dcpmm.h"
+#endif
+
 namespace rocksdb {
 
 // anon namespace for file-local types
@@ -643,8 +647,23 @@ Status WriteBatchInternal::Put(WriteBatch* b, uint32_t column_family_id,
     b->rep_.push_back(static_cast<char>(kTypeColumnFamilyValue));
     PutVarint32(&b->rep_, column_family_id);
   }
+
   PutLengthPrefixedSlice(&b->rep_, key);
+#ifdef KVS_ON_DCPMM
+  static size_t thres = KVSGetKVSValueThres();
+  static bool compress = KVSGetCompressKnob();
+  struct KVSHdr hdr;
+  if (KVSEnabled() && (value.size() >= thres) &&
+      KVSEncodeValue(value, compress, &hdr)) {
+    b->act_.push_back(hdr.pact);
+    PutLengthPrefixedSlice(&b->rep_, Slice((char*)(&hdr), sizeof(hdr)));
+  } else {
+    hdr.base.encoding = kEncodingRawUncompressed;
+    PutLengthHdrPrefixedSlice(&b->rep_, &(hdr.base), value);
+  }
+#else
   PutLengthPrefixedSlice(&b->rep_, value);
+#endif
   b->content_flags_.store(
       b->content_flags_.load(std::memory_order_relaxed) | ContentFlags::HAS_PUT,
       std::memory_order_relaxed);

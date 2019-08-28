@@ -1047,6 +1047,23 @@ struct DBOptions {
   // If set to true, takes precedence over
   // ReadOptions::background_purge_on_iterator_cleanup.
   bool avoid_unnecessary_blocking_io = false;
+
+#ifdef KVS_ON_DCPMM
+  // This specifies the absolute filename for allocating space from DCPMM.
+  // If it is empty, KVS is disabled.
+  // TODO(Peifeng) After destroying the db, it should be deleted.
+  std::string dcpmm_kvs_mmapped_file_fullpath = "";
+
+  // This is a maximum DCPMM space size that is used by KVS feature.
+  // Default: 1 GB
+  size_t dcpmm_kvs_mmapped_file_size = 1024 * 1024 * 1024;
+
+  // KVS only applies to value size >= dcpmm_kvs_value_thres
+  size_t dcpmm_kvs_value_thres = 64;
+
+  // Indicates if compress the value
+  bool dcpmm_compress_value = true;
+#endif
 };
 
 // Options to control the behavior of a database (passed to DB::Open)

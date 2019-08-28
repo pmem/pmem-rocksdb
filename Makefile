@@ -22,6 +22,15 @@ LDFLAGS += -lmemkind
 CXXFLAGS += -DBC_ON_DCPMM
 endif
 
+ifdef ROCKSDB_KVS_ON_DCPMM
+LDFLAGS += -L/usr/local/lib64/ -lpmem -lpmemobj
+CXXFLAGS += -DKVS_ON_DCPMM
+endif
+
+ifdef ROCKSDB_WAL_ON_DCPMM
+LDFLAGS += -L/usr/local/lib/ -L/usr/local/lib64/ -lpmem
+CXXFLAGS += -I/usr/local/include -DWAL_ON_DCPMM
+endif
 
 # Transform parallel LOG output into something more readable.
 perl_command = perl -n \
@@ -200,11 +209,6 @@ am__v_AR_1 =
 ifdef ROCKSDB_USE_LIBRADOS
 LIB_SOURCES += utilities/env_librados.cc
 LDFLAGS += -lrados
-endif
-
-ifdef ROCKSDB_WAL_ON_DCPMM
-LDFLAGS += -L/usr/local/lib/ -L/usr/local/lib64/ -lpmem
-CXXFLAGS += -I/usr/local/include -DWAL_ON_DCPMM
 endif
 
 AM_LINK = $(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)

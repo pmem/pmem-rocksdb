@@ -60,6 +60,7 @@ LIB_SOURCES =                                                   \
   db/write_batch_base.cc                                        \
   db/write_controller.cc                                        \
   db/write_thread.cc                                            \
+  dcpmm/kvs_dcpmm.cc                                            \
   env/env.cc                                                    \
   env/env_chroot.cc                                             \
   env/env_encryption.cc                                         \

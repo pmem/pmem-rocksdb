@@ -79,6 +79,12 @@ struct ImmutableDBOptions {
   bool two_write_queues;
   bool manual_wal_flush;
   bool atomic_flush;
+#ifdef KVS_ON_DCPMM
+  std::string dcpmm_kvs_mmapped_file_fullpath;
+  size_t dcpmm_kvs_mmapped_file_size;
+  size_t dcpmm_kvs_value_thres;
+  bool dcpmm_compress_value;
+#endif
   bool avoid_unnecessary_blocking_io;
 };
 

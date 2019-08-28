@@ -21,6 +21,9 @@
 #include "util/rate_limiter.h"
 #include "util/sst_file_manager_impl.h"
 #include "util/sync_point.h"
+#ifdef KVS_ON_DCPMM
+#include "dcpmm/kvs_dcpmm.h"
+#endif
 
 namespace rocksdb {
 Options SanitizeOptions(const std::string& dbname, const Options& src) {
@@ -1198,6 +1201,22 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     delete impl;
     return s;
   }
+
+#ifdef KVS_ON_DCPMM
+  if (impl->immutable_db_options_.dcpmm_kvs_mmapped_file_fullpath != "" &&
+    impl->env_->pm_pool == NULL) {
+    impl->env_->pm_pool = KVSOpen(
+        impl->immutable_db_options_.dcpmm_kvs_mmapped_file_fullpath.data(),
+        impl->immutable_db_options_.dcpmm_kvs_mmapped_file_size);
+    if (impl->env_->pm_pool == NULL) {
+      exit(1);
+    }
+    impl->env_->pool_uuid_lo = KVSGetUUID();
+    KVSSetKVSValueThres(impl->immutable_db_options_.dcpmm_kvs_value_thres);
+    KVSSetCompressKnob(impl->immutable_db_options_.dcpmm_compress_value);
+  }
+#endif
+
 
   s = impl->CreateArchivalDirectory();
   if (!s.ok()) {

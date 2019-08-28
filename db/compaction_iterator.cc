@@ -11,6 +11,10 @@
 #include "table/internal_iterator.h"
 #include "util/sync_point.h"
 
+#ifdef KVS_ON_DCPMM
+#include "dcpmm/kvs_dcpmm.h"
+#endif
+
 #define DEFINITELY_IN_SNAPSHOT(seq, snapshot)                       \
   ((seq) <= (snapshot) &&                                           \
    (snapshot_checker_ == nullptr ||                                 \
@@ -301,6 +305,11 @@ void CompactionIterator::NextFromInput() {
         InvokeFilterIfNeeded(&need_skip, &skip_until);
       }
     } else {
+#ifdef KVS_ON_DCPMM
+      if (ikey_.type == kTypeValue) {
+        KVSFreeValue(value_);
+      }
+#endif
       // Update the current key to reflect the new sequence number/type without
       // copying the user key.
       // TODO(rven): Compaction filter does not process keys in this path

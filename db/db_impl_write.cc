@@ -797,6 +797,9 @@ WriteBatch* DBImpl::MergeBatch(const WriteThread::WriteGroup& write_group,
       if (!writer->CallbackFailed()) {
         WriteBatchInternal::Append(merged_batch, writer->batch,
                                    /*WAL_only*/ true);
+#ifdef KVS_ON_DCPMM
+        WriteBatchInternal::DCPMMMergeActions(merged_batch, writer->batch);
+#endif
         if (WriteBatchInternal::IsLatestPersistentState(writer->batch)) {
           // We only need to cache the last of such write batch
           *to_be_cached_state = writer->batch;
@@ -839,6 +842,9 @@ Status DBImpl::WriteToWAL(const WriteBatch& merged_batch,
   // since alive_log_files_ might be modified concurrently
   alive_log_files_.back().AddSize(log_entry.size());
   log_empty_ = false;
+#ifdef KVS_ON_DCPMM
+  WriteBatchInternal::DCPMMPublishActions(&merged_batch);
+#endif
   return status;
 }
 

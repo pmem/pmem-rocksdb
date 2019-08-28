@@ -123,12 +123,7 @@ public:
       buffer = (uint8_t*)new_map_base + offset - offset_aligned - data_length;
     }
     MemcpyNT(buffer + data_length, slice.data(), len);
-    // need sfence, make sure all data is persisted to DCPMM
-    __builtin_ia32_sfence();
     data_length += len;
-    SetSizeNT(p_length, data_length);
-    // need sfence, make sure all data is persisted to DCPMM
-    __builtin_ia32_sfence();
     return Status::OK();
   }
 
@@ -153,6 +148,8 @@ public:
 
   Status Sync() override {
     // NT write need on sync
+    SetSizeNT(p_length, data_length);
+    __builtin_ia32_sfence();
     return Status::OK();
   }
 

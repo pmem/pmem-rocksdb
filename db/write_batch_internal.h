@@ -16,6 +16,10 @@
 #include "rocksdb/options.h"
 #include "util/autovector.h"
 
+#ifdef KVS_ON_DCPMM
+#include "dcpmm/kvs_dcpmm.h"
+#endif
+
 namespace rocksdb {
 
 class MemTable;
@@ -66,6 +70,26 @@ class WriteBatchInternal {
 
   // WriteBatch header has an 8-byte sequence number followed by a 4-byte count.
   static const size_t kHeader = 12;
+
+#ifdef KVS_ON_DCPMM
+  // Merge the action of the write batch
+  static void DCPMMMergeActions(WriteBatch *merged_batch, WriteBatch *batch) {
+    merged_batch->act_.insert(merged_batch->act_.end(), batch->act_.begin(),
+                              batch->act_.end());
+    batch->act_.clear();
+  }
+
+  // Publish all the actions of a grouped batch
+  static void DCPMMPublishActions(const WriteBatch* batch) {
+    std::vector<pobj_action *> a = batch->act_;
+    std::vector<pobj_action *>::iterator it;
+    for (it = a.begin(); it != a.end(); ++it) {
+      KVSPublish((struct pobj_action *)*it, 1);
+      free((void *)*it);
+    }
+    batch->act_.clear();
+  }
+#endif
 
   // WriteBatch methods with column_family_id instead of ColumnFamilyHandle*
   static Status Put(WriteBatch* batch, uint32_t column_family_id,

@@ -187,11 +187,31 @@ class DBIter final: public Iterator {
     if (current_entry_is_merged_) {
       // If pinned_value_ is set then the result of merge operator is one of
       // the merge operands and we should return it.
+#ifdef KVS_ON_DCPMM
+      // TODO(Peifeng) decode the value ref
+#endif
       return pinned_value_.data() ? pinned_value_ : saved_value_;
     } else if (direction_ == kReverse) {
+#ifdef KVS_ON_DCPMM
+      // TODO(Peifeng) decode the value ref
+#endif
       return pinned_value_;
     } else {
+#ifdef KVS_ON_DCPMM
+      enum ValueEncoding type = KVSGetEncoding(iter_.value().data());
+      if (type == kEncodingPtrCompressed ||
+          type == kEncodingPtrUncompressed) {
+        KVSDecodeValueRef(iter_.value().data(), &decoded_value_);
+        return decoded_value_;
+      } else if (type == kEncodingRawCompressed) {
+        // TODO(Peifeng) uncompress
+        return iter_.value();
+      } else
+        // TODO(Peifeng) remove first one encoding byte.
+        return iter_.value();
+#else
       return iter_.value();
+#endif
     }
   }
   Status status() const override {
@@ -351,6 +371,10 @@ class DBIter final: public Iterator {
   // for diff snapshots we want the lower bound on the seqnum;
   // if this value > 0 iterator will return internal keys
   SequenceNumber start_seqnum_;
+
+#ifdef KVS_ON_DCPMM
+  mutable std::string decoded_value_;
+#endif
 
   // No copying allowed
   DBIter(const DBIter&);

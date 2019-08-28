@@ -16,7 +16,6 @@
 #define UNUSED(x)         ((void)(x))
 
 #ifdef WAL_ON_DCPMM
-
 namespace rocksdb {
 
 class DCPMMEnv : public EnvWrapper {

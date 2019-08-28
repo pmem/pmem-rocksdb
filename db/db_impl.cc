@@ -99,6 +99,10 @@
 #include "util/string_util.h"
 #include "util/sync_point.h"
 
+#ifdef KVS_ON_DCPMM
+#include "dcpmm/kvs_dcpmm.h"
+#endif
+
 namespace rocksdb {
 const std::string kDefaultColumnFamilyName("default");
 void DumpRocksDBBuildVersion(Logger* log);
@@ -561,6 +565,13 @@ Status DBImpl::CloseHelper() {
   if (db_lock_ != nullptr) {
     env_->UnlockFile(db_lock_);
   }
+
+#ifdef KVS_ON_DCPMM
+  if (env_->pm_pool) {
+    pmemobj_close(env_->pm_pool);
+    env_->pm_pool = nullptr;
+  }
+#endif
 
   ROCKS_LOG_INFO(immutable_db_options_.info_log, "Shutdown complete");
   LogFlush(immutable_db_options_.info_log);
@@ -1449,6 +1460,19 @@ Status DBImpl::GetImpl(const ReadOptions& read_options,
                      callback, is_blob_index);
     RecordTick(stats_, MEMTABLE_MISS);
   }
+
+#ifdef KVS_ON_DCPMM
+  if (s.ok()) {
+    enum ValueEncoding type = KVSGetEncoding(pinnable_val->data());
+    if (type == kEncodingPtrCompressed || type == kEncodingPtrUncompressed) {
+      KVSDecodeValueRef(pinnable_val->data(), pinnable_val->GetSelf());
+      if (pinnable_val->IsPinned()) {
+        pinnable_val->Reset();
+      }
+      pinnable_val->PinSelf();
+    }
+  }
+#endif
 
   {
     PERF_TIMER_GUARD(get_post_process_time);
