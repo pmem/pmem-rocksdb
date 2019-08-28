@@ -1507,6 +1507,20 @@ struct DBWithColumnFamilies {
   }
 };
 
+enum OperationType : unsigned char {
+  kRead = 0,
+  kWrite,
+  kDelete,
+  kSeek,
+  kMerge,
+  kUpdate,
+  kCompress,
+  kUncompress,
+  kCrc,
+  kHash,
+  kOthers
+};
+
 // a class that reports stats to CSV file
 class ReporterAgent {
  public:
@@ -1547,11 +1561,27 @@ class ReporterAgent {
     total_ops_done_.fetch_add(num_ops);
   }
 
+  void ReportLatency(int tid, enum OperationType op_type, uint64_t micros) {
+    if (op_type == kWrite) {
+      for (size_t i = tid; ; i++) {
+        assert(((STAT_DUPS - 1) & STAT_DUPS) == 0);
+        size_t slot_index = i & (STAT_DUPS - 1);
+        auto* lock = stat_locks + slot_index;
+        if (lock->try_lock()) {
+          write_latency_stats[slot_index].Add(micros);
+          lock->unlock();
+          break;
+        }
+      }
+    }
+  }
+
  private:
-  std::string Header() const { return "secs_elapsed,interval_qps"; }
+  std::string Header() const { return "secs_elapsed,interval_qps,P99"; }
   void SleepAndReport() {
     uint64_t kMicrosInSecond = 1000 * 1000;
     auto time_started = env_->NowMicros();
+    HistogramStat merged_stat;
     while (true) {
       {
         std::unique_lock<std::mutex> lk(mutex_);
@@ -1568,8 +1598,20 @@ class ReporterAgent {
       auto secs_elapsed =
           (env_->NowMicros() - time_started + kMicrosInSecond / 2) /
           kMicrosInSecond;
+
+      merged_stat.Clear();
+      for (size_t i = 0; i < STAT_DUPS; i++) {
+        auto* lock = stat_locks + i;
+        auto* stat = write_latency_stats + i;
+        lock->lock();
+        merged_stat.Merge(*stat);
+        stat->Clear();
+        lock->unlock();
+      }
+
       std::string report = ToString(secs_elapsed) + "," +
                            ToString(total_ops_done_snapshot - last_report_) +
+                           "," + ToString(merged_stat.Percentile(99.0)) +
                            "\n";
       auto s = report_file_->Append(report);
       if (s.ok()) {
@@ -1595,20 +1637,9 @@ class ReporterAgent {
   // will notify on stop
   std::condition_variable stop_cv_;
   bool stop_;
-};
-
-enum OperationType : unsigned char {
-  kRead = 0,
-  kWrite,
-  kDelete,
-  kSeek,
-  kMerge,
-  kUpdate,
-  kCompress,
-  kUncompress,
-  kCrc,
-  kHash,
-  kOthers
+  static const size_t STAT_DUPS = 8;
+  HistogramStat write_latency_stats[STAT_DUPS];
+  std::mutex stat_locks[STAT_DUPS];
 };
 
 static std::unordered_map<OperationType, std::string, std::hash<unsigned char>>
@@ -1769,6 +1800,10 @@ class Stats {
         hist_.insert({op_type, std::move(hist_temp)});
       }
       hist_[op_type]->Add(micros);
+
+      if (reporter_agent_) {
+        reporter_agent_->ReportLatency(id_, op_type, micros);
+      }
 
       if (micros > 20000 && !FLAGS_stats_interval) {
         fprintf(stderr, "long op: %" PRIu64 " micros%30s\r", micros, "");
