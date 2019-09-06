@@ -309,7 +309,7 @@ inline void PutLengthPrefixedSlice(std::string* dst, const Slice& value) {
 }
 
 #ifdef KVS_ON_DCPMM
-inline void PutLengthHdrPrefixedSlice(std::string* dst, struct KVSHdrBase* hdr,
+inline void PutLengthHdrPrefixedSlice(std::string* dst, struct KVSHdr* hdr,
                                       const Slice& value) {
   PutVarint32(dst, static_cast<uint32_t>(value.size() + sizeof(*hdr)));
   dst->append((char*)hdr, sizeof(*hdr));

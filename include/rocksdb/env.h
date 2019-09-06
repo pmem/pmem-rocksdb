@@ -142,11 +142,7 @@ class Env {
     uint64_t size_bytes;
   };
 
-#ifdef KVS_ON_DCPMM
-  Env() : pm_pool(nullptr), pool_uuid_lo(0), thread_status_updater_(nullptr) {}
-#else
   Env() : thread_status_updater_(nullptr) {}
-#endif
 
   virtual ~Env();
 
@@ -507,11 +503,6 @@ class Env {
                               uint64_t* /*diskfree*/) {
     return Status::NotSupported();
   }
-
-#ifdef KVS_ON_DCPMM
-  PMEMobjpool *pm_pool;
-  uint64_t pool_uuid_lo;
-#endif
   // If you're adding methods here, remember to add them to EnvWrapper too.
 
  protected:

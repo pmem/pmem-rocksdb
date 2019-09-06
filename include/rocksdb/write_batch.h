@@ -28,6 +28,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <vector>
 #include "rocksdb/status.h"
 #include "rocksdb/write_batch_base.h"
 
@@ -368,7 +369,7 @@ class WriteBatch : public WriteBatchBase {
 
   // Intentionally copyable
 #ifdef KVS_ON_DCPMM
-  mutable std::vector<struct pobj_action *> act_;
+  mutable std::vector<struct pobj_action*> act_;
 #endif
 };
 

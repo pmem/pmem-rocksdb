@@ -567,10 +567,7 @@ Status DBImpl::CloseHelper() {
   }
 
 #ifdef KVS_ON_DCPMM
-  if (env_->pm_pool) {
-    pmemobj_close(env_->pm_pool);
-    env_->pm_pool = nullptr;
-  }
+  KVSClose();
 #endif
 
   ROCKS_LOG_INFO(immutable_db_options_.info_log, "Shutdown complete");

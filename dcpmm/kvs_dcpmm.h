@@ -10,26 +10,25 @@
 #pragma once
 
 #ifdef KVS_ON_DCPMM
-#include <vector>
 #include <functional>
 #include <libpmemobj.h>
+
 #include "rocksdb/slice.h"
 
 namespace rocksdb {
 
-struct KVSHdrBase {
+struct KVSHdr {
   unsigned char encoding;
 };
 
-struct KVSHdr {
+struct KVSRef {
   // Specify the encoding type of value content.
-  struct KVSHdrBase base;
+  struct KVSHdr hdr;
   // The size of value after encoding.
   unsigned int size;
-  // The offset of value on DCPMM.
-  size_t off;
-  // It is used for the reserve and publish functions of libpmemobj.
-  struct pobj_action* pact;
+  unsigned int pool_index;
+  // The offset of value on DCPMM in the pool.
+  size_t off_in_pool;
 };
 
 enum ValueEncoding {
@@ -41,27 +40,24 @@ enum ValueEncoding {
 };
 
 // Create or open the space on DCPMM for storing value.
-extern PMEMobjpool* KVSOpen(const char* path, size_t size);
+extern int KVSOpen(const char* path, size_t size, size_t pool_count = 16);
 
 // Close it.
-void KVSClose(PMEMobjpool* pool);
-
-// Get the UUID of DCPMM pool.
-extern uint64_t KVSGetUUID();
+void KVSClose();
 
 // Return true if KVS is enabled.
 extern bool KVSEnabled();
 
 // Encode value to value reference.
 extern bool KVSEncodeValue(const Slice& value, bool compress,
-                           struct KVSHdr* hdr);
+                           struct KVSRef* ref, struct pobj_action** pact);
 
 // Get the value content from value reference and call the add function
 // to insert it into SST files.
 extern void KVSDumpFromValueRef(const char* input,
                                 std::function<void(const Slice& value)> add);
 
-// Get the value content fro value reference, decompress it if needed.
+// Get the value content for value reference, decompress it if needed.
 extern void KVSDecodeValueRef(const char* input, std::string* value);
 
 // For value reference, return the value content size.
@@ -83,7 +79,7 @@ extern void KVSSetCompressKnob(bool compress);
 extern bool KVSGetCompressKnob();
 
 // To make the objects recoverable after restarting.
-extern int KVSPublish(struct pobj_action* act, size_t actvcnt);
+extern int KVSPublish(struct pobj_action** pact_array, size_t actvcnt);
 
 // Return the value encoding type.
 enum ValueEncoding KVSGetEncoding(const void *ptr);

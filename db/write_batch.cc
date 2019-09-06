@@ -652,14 +652,15 @@ Status WriteBatchInternal::Put(WriteBatch* b, uint32_t column_family_id,
 #ifdef KVS_ON_DCPMM
   static size_t thres = KVSGetKVSValueThres();
   static bool compress = KVSGetCompressKnob();
-  struct KVSHdr hdr;
+  struct KVSRef ref;
+  struct pobj_action* pact;
   if (KVSEnabled() && (value.size() >= thres) &&
-      KVSEncodeValue(value, compress, &hdr)) {
-    b->act_.push_back(hdr.pact);
-    PutLengthPrefixedSlice(&b->rep_, Slice((char*)(&hdr), sizeof(hdr)));
+      KVSEncodeValue(value, compress, &ref, &pact)) {
+    b->act_.push_back(pact);
+    PutLengthPrefixedSlice(&b->rep_, Slice((char*)(&ref), sizeof(ref)));
   } else {
-    hdr.base.encoding = kEncodingRawUncompressed;
-    PutLengthHdrPrefixedSlice(&b->rep_, &(hdr.base), value);
+    ref.hdr.encoding = kEncodingRawUncompressed;
+    PutLengthHdrPrefixedSlice(&b->rep_, &(ref.hdr), value);
   }
 #else
   PutLengthPrefixedSlice(&b->rep_, value);

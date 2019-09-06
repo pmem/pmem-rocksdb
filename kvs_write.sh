@@ -29,20 +29,18 @@ numactl --cpunodebind=1 --membind=1 \
     --batch_size=1 \
     --histogram=true \
     --use_direct_io_for_flush_and_compaction=true \
-    --write_buffer_size=268435456 \
     --target_file_size_base=67108864 \
     --disable_wal=false \
     --dcpmm_enable_wal=true \
     --sync=true \
     \
-    --writes=500000 \
-    --num=500000000 \
-    --threads=1000 \
+    --writes=1000000 \
+    --num=100000000 \
+    --threads=100 \
     \
     --dcpmm_kvs_mmapped_file_fullpath=${kvs_file} \
     --dcpmm_kvs_mmapped_file_size=${kvs_size} \
     --dcpmm_compress_value=true \
-    --min_level_to_compress=3 \
     \
     --report_interval_seconds=10 \
     --report_file=report.csv

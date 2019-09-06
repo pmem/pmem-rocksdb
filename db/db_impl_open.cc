@@ -1203,20 +1203,19 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
   }
 
 #ifdef KVS_ON_DCPMM
-  if (impl->immutable_db_options_.dcpmm_kvs_mmapped_file_fullpath != "" &&
-    impl->env_->pm_pool == NULL) {
-    impl->env_->pm_pool = KVSOpen(
+  if (impl->immutable_db_options_.dcpmm_kvs_mmapped_file_fullpath != "") {
+    int err = KVSOpen(
         impl->immutable_db_options_.dcpmm_kvs_mmapped_file_fullpath.data(),
         impl->immutable_db_options_.dcpmm_kvs_mmapped_file_size);
-    if (impl->env_->pm_pool == NULL) {
-      exit(1);
+    if (err != 0) {
+      return Status::IOError(std::string("failed to open '")
+        .append(impl->immutable_db_options_.dcpmm_kvs_mmapped_file_fullpath)
+        .append("'"));
     }
-    impl->env_->pool_uuid_lo = KVSGetUUID();
     KVSSetKVSValueThres(impl->immutable_db_options_.dcpmm_kvs_value_thres);
     KVSSetCompressKnob(impl->immutable_db_options_.dcpmm_compress_value);
   }
 #endif
-
 
   s = impl->CreateArchivalDirectory();
   if (!s.ok()) {

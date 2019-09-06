@@ -81,13 +81,9 @@ class WriteBatchInternal {
 
   // Publish all the actions of a grouped batch
   static void DCPMMPublishActions(const WriteBatch* batch) {
-    std::vector<pobj_action *> a = batch->act_;
-    std::vector<pobj_action *>::iterator it;
-    for (it = a.begin(); it != a.end(); ++it) {
-      KVSPublish((struct pobj_action *)*it, 1);
-      free((void *)*it);
-    }
-    batch->act_.clear();
+    auto& pacts = batch->act_;
+    KVSPublish(pacts.data(), pacts.size());
+    pacts.clear();
   }
 #endif
 
