@@ -82,7 +82,7 @@ class WriteBatchInternal {
   // Publish all the actions of a grouped batch
   static void DCPMMPublishActions(const WriteBatch* batch) {
     auto& pacts = batch->act_;
-    KVSPublish(pacts.data(), pacts.size());
+    KVSPublish((struct pobj_action**)pacts.data(), pacts.size());
     pacts.clear();
   }
 #endif

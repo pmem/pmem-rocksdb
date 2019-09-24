@@ -58,7 +58,7 @@ extern void KVSDumpFromValueRef(const char* input,
                                 std::function<void(const Slice& value)> add);
 
 // Get the value content for value reference, decompress it if needed.
-extern void KVSDecodeValueRef(const char* input, std::string* value);
+extern void KVSDecodeValueRef(const char* input, size_t size, std::string* dst);
 
 // For value reference, return the value content size.
 extern size_t KVSGetExtraValueSize(const Slice& value);

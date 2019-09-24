@@ -102,6 +102,7 @@ void KVSClose() {
 }
 
 enum ValueEncoding KVSGetEncoding(const void *ptr) {
+  // whether it is raw or pointed, the first byte is encoding
   auto* hdr = (KVSHdr*)ptr;
   return (enum ValueEncoding)(hdr->encoding);
 }
@@ -236,22 +237,47 @@ void KVSDumpFromValueRef(const char* input,
   }
 }
 
-void KVSDecodeValueRef(const char* input, std::string* value) {
+void KVSDecodeValueRef(const char* input, size_t size, std::string* dst) {
   assert(input);
-  auto* ref = (struct KVSRef*)input;
-  const auto* data = (char*)pools_[ref->pool_index].base_addr + ref->off_in_pool
-                + sizeof(struct KVSHdr);
+  auto encoding = KVSGetEncoding(input);
+  const char* src_data;
+  size_t src_len;
 
-  if (ref->hdr.encoding == kEncodingPtrUncompressed) {
-    value->assign(data, ref->size);
+  // if it is indirectly pointed, input is a KVSRef
+  if (encoding == kEncodingPtrUncompressed ||
+        encoding == kEncodingPtrCompressed) {
+    assert(size == sizeof(struct KVSRef));
+    auto* ref = (struct KVSRef*)input;
+    // the data on DCPMM
+    src_data = (char*)pools_[ref->pool_index].base_addr +
+                ref->off_in_pool + sizeof(struct KVSHdr);
+    src_len = ref->size;
   }
-  else if (ref->hdr.encoding == kEncodingPtrCompressed) {
-    size_t ulength = 0;
-    if (Snappy_GetUncompressedLength(data, ref->size, &ulength)) {
-      char* buf = new char[ulength];
-      Snappy_Uncompress(data, ref->size, buf);
-      value->assign(buf, ulength);
-      delete buf;
+  // else it is directly referred, input is a KVSHdr with raw data following
+  else {
+    assert(encoding == kEncodingRawUncompressed ||
+            encoding == kEncodingRawCompressed);
+    assert(size >= sizeof(struct KVSHdr));
+    src_data = input + sizeof(struct KVSHdr);
+    src_len = size - sizeof(struct KVSHdr);
+  }
+
+  // if not compressed
+  if (encoding == kEncodingRawUncompressed ||
+      encoding == kEncodingPtrUncompressed) {
+    dst->assign(src_data, src_len);
+  }
+  // else need to decompress
+  else
+  {
+    assert(encoding == kEncodingRawCompressed ||
+      encoding == kEncodingPtrCompressed);
+    size_t dst_len;
+    if (Snappy_GetUncompressedLength(src_data, src_len, &dst_len)) {
+      char* tmp_buf = new char[dst_len];
+      Snappy_Uncompress(src_data, src_len, tmp_buf);
+      dst->assign(tmp_buf, dst_len);
+      delete tmp_buf;
     } else {
       abort();
     }

@@ -1460,14 +1460,12 @@ Status DBImpl::GetImpl(const ReadOptions& read_options,
 
 #ifdef KVS_ON_DCPMM
   if (s.ok()) {
-    enum ValueEncoding type = KVSGetEncoding(pinnable_val->data());
-    if (type == kEncodingPtrCompressed || type == kEncodingPtrUncompressed) {
-      KVSDecodeValueRef(pinnable_val->data(), pinnable_val->GetSelf());
-      if (pinnable_val->IsPinned()) {
-        pinnable_val->Reset();
-      }
-      pinnable_val->PinSelf();
+    KVSDecodeValueRef(pinnable_val->data(), pinnable_val->size(),
+                        pinnable_val->GetSelf());
+    if (pinnable_val->IsPinned()) {
+      pinnable_val->Reset();
     }
+    pinnable_val->PinSelf();
   }
 #endif
 
