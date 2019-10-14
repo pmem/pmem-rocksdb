@@ -297,7 +297,7 @@ size_t KVSGetExtraValueSize(const Slice& value) {
 
 void KVSFreeValue(const Slice& value) {
   auto* ref = (struct KVSRef*)value.data();
-  if (ref->hdr.encoding != kEncodingRawCompressed &&
+  if (ref && ref->hdr.encoding != kEncodingRawCompressed &&
       ref->hdr.encoding != kEncodingRawUncompressed) {
     FreePmem(ref);
   }

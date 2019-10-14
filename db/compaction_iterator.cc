@@ -305,11 +305,6 @@ void CompactionIterator::NextFromInput() {
         InvokeFilterIfNeeded(&need_skip, &skip_until);
       }
     } else {
-#ifdef KVS_ON_DCPMM
-      if (ikey_.type == kTypeValue) {
-        KVSFreeValue(value_);
-      }
-#endif
       // Update the current key to reflect the new sequence number/type without
       // copying the user key.
       // TODO(rven): Compaction filter does not process keys in this path
@@ -360,7 +355,9 @@ void CompactionIterator::NextFromInput() {
       // (See Optimization 3, below.)
       assert(ikey_.type == kTypeValue);
       assert(current_user_key_snapshot_ == last_snapshot);
-
+#ifdef KVS_ON_DCPMM
+      if (ikey_.type == kTypeValue) KVSFreeValue(value_);
+#endif
       value_.clear();
       valid_ = true;
       clear_and_output_next_key_ = false;
@@ -441,6 +438,9 @@ void CompactionIterator::NextFromInput() {
             ++iter_stats_.num_record_drop_obsolete;
             // Already called input_->Next() once.  Call it a second time to
             // skip past the second key.
+#ifdef KVS_ON_DCPMM
+            if (next_ikey.type == kTypeValue) KVSFreeValue(input_->value());
+#endif
             input_->Next();
           } else {
             // Found a matching value, but we cannot drop both keys since
@@ -517,6 +517,9 @@ void CompactionIterator::NextFromInput() {
                   SnapshotCheckerResult::kNotInSnapshot));
 
       ++iter_stats_.num_record_drop_hidden;  // (A)
+#ifdef KVS_ON_DCPMM
+      if (ikey_.type == kTypeValue) KVSFreeValue(value_);
+#endif
       input_->Next();
     } else if (compaction_ != nullptr && ikey_.type == kTypeDeletion &&
                IN_EARLIEST_SNAPSHOT(ikey_.sequence) &&
@@ -560,6 +563,9 @@ void CompactionIterator::NextFromInput() {
              cmp_->Equal(ikey_.user_key, next_ikey.user_key) &&
              (prev_snapshot == 0 ||
               DEFINITELY_NOT_IN_SNAPSHOT(next_ikey.sequence, prev_snapshot))) {
+#ifdef KVS_ON_DCPMM
+        if (next_ikey.type == kTypeValue) KVSFreeValue(input_->value());
+#endif
         input_->Next();
       }
       // If you find you still need to output a row with this key, we need to output the
@@ -622,6 +628,9 @@ void CompactionIterator::NextFromInput() {
       if (should_delete) {
         ++iter_stats_.num_record_drop_hidden;
         ++iter_stats_.num_record_drop_range_del;
+#ifdef KVS_ON_DCPMM
+        if (ikey_.type == kTypeValue) KVSFreeValue(value_);
+#endif
         input_->Next();
       } else {
         valid_ = true;
@@ -629,6 +638,7 @@ void CompactionIterator::NextFromInput() {
     }
 
     if (need_skip) {
+      //TODO(peifeng) free the value among skips
       input_->Seek(skip_until);
     }
   }
