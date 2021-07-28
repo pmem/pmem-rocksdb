@@ -5,10 +5,8 @@
 
 package org.rocksdb;
 
-public interface ColumnFamilyOptionsInterface
-    <T extends ColumnFamilyOptionsInterface>
-        extends AdvancedColumnFamilyOptionsInterface<T> {
-
+public interface ColumnFamilyOptionsInterface<T extends ColumnFamilyOptionsInterface<T>>
+    extends AdvancedColumnFamilyOptionsInterface<T> {
   /**
    * Use this if your DB is very small (like under 1GB) and you don't want to
    * spend lots of memory for memtables.
@@ -123,7 +121,7 @@ public interface ColumnFamilyOptionsInterface
    * @return the instance of the current object.
    */
   T setComparator(
-      AbstractComparator<? extends AbstractSlice<?>> comparator);
+      AbstractComparator comparator);
 
   /**
    * <p>Set the merge operator to be used for merging two merge operands

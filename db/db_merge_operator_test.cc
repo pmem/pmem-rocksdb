@@ -12,7 +12,7 @@
 #include "utilities/merge_operators.h"
 #include "utilities/merge_operators/string_append/stringappend2.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class TestReadCallback : public ReadCallback {
  public:
@@ -46,9 +46,11 @@ class DBMergeOperatorTest : public DBTestBase {
     ReadOptions read_opt;
     read_opt.snapshot = snapshot;
     PinnableSlice value;
-    Status s =
-        dbfull()->GetImpl(read_opt, db_->DefaultColumnFamily(), key, &value,
-                          nullptr /*value_found*/, &read_callback);
+    DBImpl::GetImplOptions get_impl_options;
+    get_impl_options.column_family = db_->DefaultColumnFamily();
+    get_impl_options.value = &value;
+    get_impl_options.callback = &read_callback;
+    Status s = dbfull()->GetImpl(read_opt, key, get_impl_options);
     if (!s.ok()) {
       return s.ToString();
     }
@@ -275,68 +277,6 @@ TEST_P(MergeOperatorPinningTest, OperandsMultiBlocks) {
   VerifyDBFromMap(true_data);
 }
 
-TEST_P(MergeOperatorPinningTest, Randomized) {
-  do {
-    Options options = CurrentOptions();
-    options.merge_operator = MergeOperators::CreateMaxOperator();
-    BlockBasedTableOptions table_options;
-    table_options.no_block_cache = disable_block_cache_;
-    options.table_factory.reset(NewBlockBasedTableFactory(table_options));
-    DestroyAndReopen(options);
-
-    Random rnd(301);
-    std::map<std::string, std::string> true_data;
-
-    const int kTotalMerges = 5000;
-    // Every key gets ~10 operands
-    const int kKeyRange = kTotalMerges / 10;
-    const int kOperandSize = 20;
-    const int kNumPutBefore = kKeyRange / 10;  // 10% value
-    const int kNumPutAfter = kKeyRange / 10;   // 10% overwrite
-    const int kNumDelete = kKeyRange / 10;     // 10% delete
-
-    // kNumPutBefore keys will have base values
-    for (int i = 0; i < kNumPutBefore; i++) {
-      std::string key = Key(rnd.Next() % kKeyRange);
-      std::string value = RandomString(&rnd, kOperandSize);
-      ASSERT_OK(db_->Put(WriteOptions(), key, value));
-
-      true_data[key] = value;
-    }
-
-    // Do kTotalMerges merges
-    for (int i = 0; i < kTotalMerges; i++) {
-      std::string key = Key(rnd.Next() % kKeyRange);
-      std::string value = RandomString(&rnd, kOperandSize);
-      ASSERT_OK(db_->Merge(WriteOptions(), key, value));
-
-      if (true_data[key] < value) {
-        true_data[key] = value;
-      }
-    }
-
-    // Overwrite random kNumPutAfter keys
-    for (int i = 0; i < kNumPutAfter; i++) {
-      std::string key = Key(rnd.Next() % kKeyRange);
-      std::string value = RandomString(&rnd, kOperandSize);
-      ASSERT_OK(db_->Put(WriteOptions(), key, value));
-
-      true_data[key] = value;
-    }
-
-    // Delete random kNumDelete keys
-    for (int i = 0; i < kNumDelete; i++) {
-      std::string key = Key(rnd.Next() % kKeyRange);
-      ASSERT_OK(db_->Delete(WriteOptions(), key));
-
-      true_data.erase(key);
-    }
-
-    VerifyDBFromMap(true_data);
-
-  } while (ChangeOptions(kSkipMergePut));
-}
-
 class MergeOperatorHook : public MergeOperator {
  public:
   explicit MergeOperatorHook(std::shared_ptr<MergeOperator> _merge_op)
@@ -478,8 +418,8 @@ TEST_P(MergeOperatorPinningTest, TailingIterator) {
     delete iter;
   };
 
-  rocksdb::port::Thread writer_thread(writer_func);
-  rocksdb::port::Thread reader_thread(reader_func);
+  ROCKSDB_NAMESPACE::port::Thread writer_thread(writer_func);
+  ROCKSDB_NAMESPACE::port::Thread reader_thread(reader_func);
 
   writer_thread.join();
   reader_thread.join();
@@ -516,19 +456,19 @@ TEST_F(DBMergeOperatorTest, TailingIteratorMemtableUnrefedBySomeoneElse) {
 
   bool pushed_first_operand = false;
   bool stepped_to_next_operand = false;
-  rocksdb::SyncPoint::GetInstance()->SetCallBack(
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
       "DBIter::MergeValuesNewToOld:PushedFirstOperand", [&](void*) {
         EXPECT_FALSE(pushed_first_operand);
         pushed_first_operand = true;
         db_->Flush(FlushOptions()); // Switch to SuperVersion B
       });
-  rocksdb::SyncPoint::GetInstance()->SetCallBack(
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->SetCallBack(
       "DBIter::MergeValuesNewToOld:SteppedToNextOperand", [&](void*) {
         EXPECT_FALSE(stepped_to_next_operand);
         stepped_to_next_operand = true;
         someone_else.reset(); // Unpin SuperVersion A
       });
-  rocksdb::SyncPoint::GetInstance()->EnableProcessing();
+  ROCKSDB_NAMESPACE::SyncPoint::GetInstance()->EnableProcessing();
 
   ReadOptions ro;
   ro.tailing = true;
@@ -637,10 +577,90 @@ TEST_F(DBMergeOperatorTest, SnapshotCheckerAndReadCallback) {
   db_->ReleaseSnapshot(snapshot2);
 }
 
-}  // namespace rocksdb
+class PerConfigMergeOperatorPinningTest
+    : public DBMergeOperatorTest,
+      public testing::WithParamInterface<std::tuple<bool, int>> {
+ public:
+  PerConfigMergeOperatorPinningTest() {
+    std::tie(disable_block_cache_, option_config_) = GetParam();
+  }
+
+  bool disable_block_cache_;
+};
+
+INSTANTIATE_TEST_CASE_P(
+    MergeOperatorPinningTest, PerConfigMergeOperatorPinningTest,
+    ::testing::Combine(::testing::Bool(),
+                       ::testing::Range(static_cast<int>(DBTestBase::kDefault),
+                                        static_cast<int>(DBTestBase::kEnd))));
+
+TEST_P(PerConfigMergeOperatorPinningTest, Randomized) {
+  if (ShouldSkipOptions(option_config_, kSkipMergePut)) {
+    return;
+  }
+
+  Options options = CurrentOptions();
+  options.merge_operator = MergeOperators::CreateMaxOperator();
+  BlockBasedTableOptions table_options;
+  table_options.no_block_cache = disable_block_cache_;
+  options.table_factory.reset(NewBlockBasedTableFactory(table_options));
+  DestroyAndReopen(options);
+
+  Random rnd(301);
+  std::map<std::string, std::string> true_data;
+
+  const int kTotalMerges = 5000;
+  // Every key gets ~10 operands
+  const int kKeyRange = kTotalMerges / 10;
+  const int kOperandSize = 20;
+  const int kNumPutBefore = kKeyRange / 10;  // 10% value
+  const int kNumPutAfter = kKeyRange / 10;   // 10% overwrite
+  const int kNumDelete = kKeyRange / 10;     // 10% delete
+
+  // kNumPutBefore keys will have base values
+  for (int i = 0; i < kNumPutBefore; i++) {
+    std::string key = Key(rnd.Next() % kKeyRange);
+    std::string value = RandomString(&rnd, kOperandSize);
+    ASSERT_OK(db_->Put(WriteOptions(), key, value));
+
+    true_data[key] = value;
+  }
+
+  // Do kTotalMerges merges
+  for (int i = 0; i < kTotalMerges; i++) {
+    std::string key = Key(rnd.Next() % kKeyRange);
+    std::string value = RandomString(&rnd, kOperandSize);
+    ASSERT_OK(db_->Merge(WriteOptions(), key, value));
+
+    if (true_data[key] < value) {
+      true_data[key] = value;
+    }
+  }
+
+  // Overwrite random kNumPutAfter keys
+  for (int i = 0; i < kNumPutAfter; i++) {
+    std::string key = Key(rnd.Next() % kKeyRange);
+    std::string value = RandomString(&rnd, kOperandSize);
+    ASSERT_OK(db_->Put(WriteOptions(), key, value));
+
+    true_data[key] = value;
+  }
+
+  // Delete random kNumDelete keys
+  for (int i = 0; i < kNumDelete; i++) {
+    std::string key = Key(rnd.Next() % kKeyRange);
+    ASSERT_OK(db_->Delete(WriteOptions(), key));
+
+    true_data.erase(key);
+  }
+
+  VerifyDBFromMap(true_data);
+}
+
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
-  rocksdb::port::InstallStackTraceHandler();
+  ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

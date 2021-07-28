@@ -9,27 +9,26 @@
 
 #include "table/format.h"
 
-#include <inttypes.h>
+#include <cinttypes>
 #include <string>
 
+#include "block_fetcher.h"
+#include "file/random_access_file_reader.h"
+#include "logging/logging.h"
+#include "memory/memory_allocator.h"
 #include "monitoring/perf_context_imp.h"
 #include "monitoring/statistics.h"
 #include "rocksdb/env.h"
-#include "table/block.h"
-#include "table/block_based_table_reader.h"
-#include "table/block_fetcher.h"
+#include "table/block_based/block.h"
+#include "table/block_based/block_based_table_reader.h"
 #include "table/persistent_cache_helper.h"
 #include "util/coding.h"
 #include "util/compression.h"
 #include "util/crc32c.h"
-#include "util/file_reader_writer.h"
-#include "util/logging.h"
-#include "util/memory_allocator.h"
 #include "util/stop_watch.h"
 #include "util/string_util.h"
-#include "util/xxhash.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 extern const uint64_t kLegacyBlockBasedTableMagicNumber;
 extern const uint64_t kBlockBasedTableMagicNumber;
@@ -90,6 +89,58 @@ std::string BlockHandle::ToString(bool hex) const {
 }
 
 const BlockHandle BlockHandle::kNullBlockHandle(0, 0);
+
+void IndexValue::EncodeTo(std::string* dst, bool have_first_key,
+                          const BlockHandle* previous_handle) const {
+  if (previous_handle) {
+    assert(handle.offset() == previous_handle->offset() +
+                                  previous_handle->size() + kBlockTrailerSize);
+    PutVarsignedint64(dst, handle.size() - previous_handle->size());
+  } else {
+    handle.EncodeTo(dst);
+  }
+  assert(dst->size() != 0);
+
+  if (have_first_key) {
+    PutLengthPrefixedSlice(dst, first_internal_key);
+  }
+}
+
+Status IndexValue::DecodeFrom(Slice* input, bool have_first_key,
+                              const BlockHandle* previous_handle) {
+  if (previous_handle) {
+    int64_t delta;
+    if (!GetVarsignedint64(input, &delta)) {
+      return Status::Corruption("bad delta-encoded index value");
+    }
+    handle = BlockHandle(
+        previous_handle->offset() + previous_handle->size() + kBlockTrailerSize,
+        previous_handle->size() + delta);
+  } else {
+    Status s = handle.DecodeFrom(input);
+    if (!s.ok()) {
+      return s;
+    }
+  }
+
+  if (!have_first_key) {
+    first_internal_key = Slice();
+  } else if (!GetLengthPrefixedSlice(input, &first_internal_key)) {
+    return Status::Corruption("bad first key in block info");
+  }
+
+  return Status::OK();
+}
+
+std::string IndexValue::ToString(bool hex, bool have_first_key) const {
+  std::string s;
+  EncodeTo(&s, have_first_key, nullptr);
+  if (hex) {
+    return Slice(s).ToString(true);
+  } else {
+    return s;
+  }
+}
 
 namespace {
 inline bool IsLegacyFooterFormat(uint64_t magic_number) {
@@ -216,14 +267,16 @@ std::string Footer::ToString() const {
     result.append("metaindex handle: " + metaindex_handle_.ToString() + "\n  ");
     result.append("index handle: " + index_handle_.ToString() + "\n  ");
     result.append("table_magic_number: " +
-                  rocksdb::ToString(table_magic_number_) + "\n  ");
+                  ROCKSDB_NAMESPACE::ToString(table_magic_number_) + "\n  ");
   } else {
-    result.append("checksum: " + rocksdb::ToString(checksum_) + "\n  ");
+    result.append("checksum: " + ROCKSDB_NAMESPACE::ToString(checksum_) +
+                  "\n  ");
     result.append("metaindex handle: " + metaindex_handle_.ToString() + "\n  ");
     result.append("index handle: " + index_handle_.ToString() + "\n  ");
-    result.append("footer version: " + rocksdb::ToString(version_) + "\n  ");
+    result.append("footer version: " + ROCKSDB_NAMESPACE::ToString(version_) +
+                  "\n  ");
     result.append("table_magic_number: " +
-                  rocksdb::ToString(table_magic_number_) + "\n  ");
+                  ROCKSDB_NAMESPACE::ToString(table_magic_number_) + "\n  ");
   }
   return result;
 }
@@ -239,7 +292,8 @@ Status ReadFooterFromFile(RandomAccessFileReader* file,
                               file->file_name());
   }
 
-  char footer_space[Footer::kMaxEncodedLength];
+  std::string footer_buf;
+  AlignedBuf internal_buf;
   Slice footer_input;
   size_t read_offset =
       (file_size > Footer::kMaxEncodedLength)
@@ -249,8 +303,14 @@ Status ReadFooterFromFile(RandomAccessFileReader* file,
   if (prefetch_buffer == nullptr ||
       !prefetch_buffer->TryReadFromCache(read_offset, Footer::kMaxEncodedLength,
                                          &footer_input)) {
-    s = file->Read(read_offset, Footer::kMaxEncodedLength, &footer_input,
-                   footer_space);
+    if (file->use_direct_io()) {
+      s = file->Read(IOOptions(), read_offset, Footer::kMaxEncodedLength,
+                     &footer_input, nullptr, &internal_buf);
+    } else {
+      footer_buf.reserve(Footer::kMaxEncodedLength);
+      s = file->Read(IOOptions(), read_offset, Footer::kMaxEncodedLength,
+                     &footer_input, &footer_buf[0], nullptr);
+    }
     if (!s.ok()) return s;
   }
 
@@ -281,6 +341,7 @@ Status UncompressBlockContentsForCompressionType(
     const UncompressionInfo& uncompression_info, const char* data, size_t n,
     BlockContents* contents, uint32_t format_version,
     const ImmutableCFOptions& ioptions, MemoryAllocator* allocator) {
+  Status ret = Status::OK();
   CacheAllocationPtr ubuf;
 
   assert(uncompression_info.type() != kNoCompression &&
@@ -387,7 +448,15 @@ Status UncompressBlockContentsForCompressionType(
                         contents->data.size());
   RecordTick(ioptions.statistics, NUMBER_BLOCK_DECOMPRESSED);
 
-  return Status::OK();
+  TEST_SYNC_POINT_CALLBACK(
+      "UncompressBlockContentsForCompressionType:TamperWithReturnValue",
+      static_cast<void*>(&ret));
+  TEST_SYNC_POINT_CALLBACK(
+      "UncompressBlockContentsForCompressionType:"
+      "TamperWithDecompressionOutput",
+      static_cast<void*>(contents));
+
+  return ret;
 }
 
 //
@@ -403,10 +472,10 @@ Status UncompressBlockContents(const UncompressionInfo& uncompression_info,
                                const ImmutableCFOptions& ioptions,
                                MemoryAllocator* allocator) {
   assert(data[n] != kNoCompression);
-  assert(data[n] == uncompression_info.type());
+  assert(data[n] == static_cast<char>(uncompression_info.type()));
   return UncompressBlockContentsForCompressionType(uncompression_info, data, n,
                                                    contents, format_version,
                                                    ioptions, allocator);
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

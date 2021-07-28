@@ -7,15 +7,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
+#include "rocksdb/comparator.h"
+#include <stdint.h>
 #include <algorithm>
 #include <memory>
-#include <stdint.h>
-#include "rocksdb/comparator.h"
-#include "rocksdb/slice.h"
+#include "logging/logging.h"
 #include "port/port.h"
-#include "util/logging.h"
+#include "rocksdb/slice.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 namespace {
 class BytewiseComparatorImpl : public Comparator {
@@ -124,6 +124,12 @@ class BytewiseComparatorImpl : public Comparator {
   bool CanKeysWithDifferentByteContentsBeEqual() const override {
     return false;
   }
+
+  using Comparator::CompareWithoutTimestamp;
+  int CompareWithoutTimestamp(const Slice& a, bool /*a_has_ts*/, const Slice& b,
+                              bool /*b_has_ts*/) const override {
+    return a.compare(b);
+  }
 };
 
 class ReverseBytewiseComparatorImpl : public BytewiseComparatorImpl {
@@ -192,6 +198,12 @@ class ReverseBytewiseComparatorImpl : public BytewiseComparatorImpl {
   bool CanKeysWithDifferentByteContentsBeEqual() const override {
     return false;
   }
+
+  using Comparator::CompareWithoutTimestamp;
+  int CompareWithoutTimestamp(const Slice& a, bool /*a_has_ts*/, const Slice& b,
+                              bool /*b_has_ts*/) const override {
+    return -a.compare(b);
+  }
 };
 }// namespace
 
@@ -205,4 +217,4 @@ const Comparator* ReverseBytewiseComparator() {
   return &rbytewise;
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

@@ -18,8 +18,8 @@ int main() {
 #include "db/write_batch_internal.h"
 #include "rocksdb/db.h"
 #include "rocksdb/types.h"
+#include "test_util/testutil.h"
 #include "util/gflags_compat.h"
-#include "util/testutil.h"
 
 // Run a thread to perform Put's.
 // Another thread uses GetUpdatesSince API to keep getting the updates.
@@ -27,7 +27,7 @@ int main() {
 // --num_inserts = the num of inserts the first thread should perform.
 // --wal_ttl = the wal ttl for the run.
 
-using namespace rocksdb;
+using namespace ROCKSDB_NAMESPACE;
 
 using GFLAGS_NAMESPACE::ParseCommandLineFlags;
 using GFLAGS_NAMESPACE::SetUsageMessage;

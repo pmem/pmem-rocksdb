@@ -1,14 +1,58 @@
-## This rocksdb is derived from facebook rocksdb v6.2.2.
-
-It depends on memkind and pmdk library, please install them before compiling the rocksdb.
-
-To use the new features, please compile with below options:
-
-$ make release -j ROCKSDB_BC_ON_DCPMM=1 ROCKSDB_KVS_ON_DCPMM=1 ROCKSDB_WAL_ON_DCPMM=1
-
-To benchmark it, please refer to the script kvs_write.sh and opensource_write.sh
-
 ## RocksDB: A Persistent Key-Value Store for Flash and RAM Storage
+
+### Intel optimized features for pmem
+
+These are experimental features, don't use them in production environment.
+
+#### Build
+
+make ROCKSDB_ON_DCPMM=1 install-static -j
+
+#### Reuse obsoleted sst files
+
+To avoid page-fault and page-zeroing overhead on pmem
+
+usage:
+
+options.recycle_dcpmm_sst = true;
+
+#### Write wal with nt-store
+
+usage:
+
+options.env = rocksdb::NewDCPMMEnv(rocksdb::DCPMMEnvOptions());
+
+#### Key-value separation
+
+allocate values with libpmemobj
+
+usage:
+
+options.env = rocksdb::NewDCPMMEnv(rocksdb::DCPMMEnvOptions());
+
+options.dcpmm_kvs_enable = true;
+
+options.dcpmm_kvs_mmapped_file_fullpath = {path to libpmemobj file};
+
+options.dcpmm_kvs_mmapped_file_size = {libpmemobj file size};
+
+options.dcpmm_kvs_value_thres = 64;  // minimal size to do kv sep
+
+options.dcpmm_compress_value = false;
+
+#### Optimized mmap read for pmem
+
+usage:
+
+options.use_mmap_read = true;
+
+options.cache_index_and_filter_blocks_for_mmap_read = true;
+
+rocksdb::BlockBasedTableOptions bbto;
+
+bbto.block_size = 256 (512,1024, ... etc);
+
+options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(bbto));
 
 [![Linux/Mac Build Status](https://travis-ci.org/facebook/rocksdb.svg?branch=master)](https://travis-ci.org/facebook/rocksdb)
 [![Windows Build status](https://ci.appveyor.com/api/projects/status/fbgfu0so3afcno78/branch/master?svg=true)](https://ci.appveyor.com/project/Facebook/rocksdb/branch/master)
@@ -19,11 +63,11 @@ It is built on earlier work on [LevelDB](https://github.com/google/leveldb) by S
 and Jeff Dean (jeff@google.com)
 
 This code is a library that forms the core building block for a fast
-key value server, especially suited for storing data on flash drives.
+key-value server, especially suited for storing data on flash drives.
 It has a Log-Structured-Merge-Database (LSM) design with flexible tradeoffs
 between Write-Amplification-Factor (WAF), Read-Amplification-Factor (RAF)
 and Space-Amplification-Factor (SAF). It has multi-threaded compactions,
-making it specially suitable for storing multiple terabytes of data in a
+making it especially suitable for storing multiple terabytes of data in a
 single database.
 
 Start with example usage here: https://github.com/facebook/rocksdb/tree/master/examples
@@ -34,7 +78,7 @@ The public interface is in `include/`.  Callers should not include or
 rely on the details of any other header files in this package.  Those
 internal APIs may be changed without warning.
 
-Design discussions are conducted in https://www.facebook.com/groups/rocksdb.dev/
+Design discussions are conducted in https://www.facebook.com/groups/rocksdb.dev/ and https://rocksdb.slack.com/
 
 ## License
 

@@ -71,6 +71,7 @@ public class DBOptions extends RocksObject
    * {@code allowMmapReads()} has a property key:
    * {@code allow_mmap_reads}.</p>
    *
+   * @param cfgOpts The ConfigOptions to control how the string is processed.
    * @param properties {@link java.util.Properties} instance.
    *
    * @return {@link org.rocksdb.DBOptions instance}
@@ -80,22 +81,40 @@ public class DBOptions extends RocksObject
    *     {@link java.util.Properties} instance is passed to the method call.
    */
   public static DBOptions getDBOptionsFromProps(
-      final Properties properties) {
-    if (properties == null || properties.size() == 0) {
-      throw new IllegalArgumentException(
-          "Properties value must contain at least one value.");
-    }
+      final ConfigOptions cfgOpts, final Properties properties) {
     DBOptions dbOptions = null;
-    StringBuilder stringBuilder = new StringBuilder();
-    for (final String name : properties.stringPropertyNames()){
-      stringBuilder.append(name);
-      stringBuilder.append("=");
-      stringBuilder.append(properties.getProperty(name));
-      stringBuilder.append(";");
+    final String optionsString = Options.getOptionStringFromProps(properties);
+    final long handle = getDBOptionsFromProps(cfgOpts.nativeHandle_, optionsString);
+    if (handle != 0) {
+      dbOptions = new DBOptions(handle);
     }
-    long handle = getDBOptionsFromProps(
-        stringBuilder.toString());
-    if (handle != 0){
+    return dbOptions;
+  }
+
+  /**
+   * <p>Method to get a options instance by using pre-configured
+   * property values. If one or many values are undefined in
+   * the context of RocksDB the method will return a null
+   * value.</p>
+   *
+   * <p><strong>Note</strong>: Property keys can be derived from
+   * getter methods within the options class. Example: the method
+   * {@code allowMmapReads()} has a property key:
+   * {@code allow_mmap_reads}.</p>
+   *
+   * @param properties {@link java.util.Properties} instance.
+   *
+   * @return {@link org.rocksdb.DBOptions instance}
+   *     or null.
+   *
+   * @throws java.lang.IllegalArgumentException if null or empty
+   *     {@link java.util.Properties} instance is passed to the method call.
+   */
+  public static DBOptions getDBOptionsFromProps(final Properties properties) {
+    DBOptions dbOptions = null;
+    final String optionsString = Options.getOptionStringFromProps(properties);
+    final long handle = getDBOptionsFromProps(optionsString);
+    if (handle != 0) {
       dbOptions = new DBOptions(handle);
     }
     return dbOptions;
@@ -385,6 +404,7 @@ public class DBOptions extends RocksObject
   }
 
   @Override
+  @Deprecated
   public void setBaseBackgroundCompactions(
       final int baseBackgroundCompactions) {
     assert(isOwningHandle());
@@ -398,6 +418,7 @@ public class DBOptions extends RocksObject
   }
 
   @Override
+  @Deprecated
   public DBOptions setMaxBackgroundCompactions(
       final int maxBackgroundCompactions) {
     assert(isOwningHandle());
@@ -406,6 +427,7 @@ public class DBOptions extends RocksObject
   }
 
   @Override
+  @Deprecated
   public int maxBackgroundCompactions() {
     assert(isOwningHandle());
     return maxBackgroundCompactions(nativeHandle_);
@@ -425,6 +447,7 @@ public class DBOptions extends RocksObject
   }
 
   @Override
+  @Deprecated
   public DBOptions setMaxBackgroundFlushes(
       final int maxBackgroundFlushes) {
     assert(isOwningHandle());
@@ -433,6 +456,7 @@ public class DBOptions extends RocksObject
   }
 
   @Override
+  @Deprecated
   public int maxBackgroundFlushes() {
     assert(isOwningHandle());
     return maxBackgroundFlushes(nativeHandle_);
@@ -661,6 +685,34 @@ public class DBOptions extends RocksObject
   }
 
   @Override
+  public DBOptions setStatsPersistPeriodSec(
+      final int statsPersistPeriodSec) {
+    assert(isOwningHandle());
+    setStatsPersistPeriodSec(nativeHandle_, statsPersistPeriodSec);
+    return this;
+  }
+
+  @Override
+  public int statsPersistPeriodSec() {
+    assert(isOwningHandle());
+    return statsPersistPeriodSec(nativeHandle_);
+  }
+
+  @Override
+  public DBOptions setStatsHistoryBufferSize(
+      final long statsHistoryBufferSize) {
+    assert(isOwningHandle());
+    setStatsHistoryBufferSize(nativeHandle_, statsHistoryBufferSize);
+    return this;
+  }
+
+  @Override
+  public long statsHistoryBufferSize() {
+    assert(isOwningHandle());
+    return statsHistoryBufferSize(nativeHandle_);
+  }
+
+  @Override
   public DBOptions setAdviseRandomOnOpen(
       final boolean adviseRandomOnOpen) {
     assert(isOwningHandle());
@@ -807,6 +859,19 @@ public class DBOptions extends RocksObject
     return walBytesPerSync(nativeHandle_);
   }
 
+  @Override
+  public DBOptions setStrictBytesPerSync(final boolean strictBytesPerSync) {
+    assert(isOwningHandle());
+    setStrictBytesPerSync(nativeHandle_, strictBytesPerSync);
+    return this;
+  }
+
+  @Override
+  public boolean strictBytesPerSync() {
+    assert(isOwningHandle());
+    return strictBytesPerSync(nativeHandle_);
+  }
+
   //TODO(AR) NOW
 //  @Override
 //  public DBOptions setListeners(final List<EventListener> listeners) {
@@ -871,6 +936,18 @@ public class DBOptions extends RocksObject
     assert(isOwningHandle());
     return enablePipelinedWrite(nativeHandle_);
   }
+
+  @Override
+  public DBOptions setUnorderedWrite(final boolean unorderedWrite) {
+    setUnorderedWrite(nativeHandle_, unorderedWrite);
+    return this;
+  }
+
+  @Override
+  public boolean unorderedWrite() {
+    return unorderedWrite(nativeHandle_);
+  }
+
 
   @Override
   public DBOptions setAllowConcurrentMemtableWrite(
@@ -1117,8 +1194,8 @@ public class DBOptions extends RocksObject
     super(nativeHandle);
   }
 
-  private static native long getDBOptionsFromProps(
-      String optString);
+  private static native long getDBOptionsFromProps(long cfgHandle, String optString);
+  private static native long getDBOptionsFromProps(String optString);
 
   private static native long newDBOptions();
   private static native long copyDBOptions(final long handle);
@@ -1227,6 +1304,14 @@ public class DBOptions extends RocksObject
   private native void setStatsDumpPeriodSec(
       long handle, int statsDumpPeriodSec);
   private native int statsDumpPeriodSec(long handle);
+  private native void setStatsPersistPeriodSec(
+      final long handle, final int statsPersistPeriodSec);
+  private native int statsPersistPeriodSec(
+      final long handle);
+  private native void setStatsHistoryBufferSize(
+      final long handle, final long statsHistoryBufferSize);
+  private native long statsHistoryBufferSize(
+      final long handle);
   private native void setAdviseRandomOnOpen(
       long handle, boolean adviseRandomOnOpen);
   private native boolean adviseRandomOnOpen(long handle);
@@ -1258,6 +1343,10 @@ public class DBOptions extends RocksObject
   private native long bytesPerSync(long handle);
   private native void setWalBytesPerSync(long handle, long walBytesPerSync);
   private native long walBytesPerSync(long handle);
+  private native void setStrictBytesPerSync(
+      final long handle, final boolean strictBytesPerSync);
+  private native boolean strictBytesPerSync(
+      final long handle);
   private native void setEnableThreadTracking(long handle,
       boolean enableThreadTracking);
   private native boolean enableThreadTracking(long handle);
@@ -1266,6 +1355,9 @@ public class DBOptions extends RocksObject
   private native void setEnablePipelinedWrite(final long handle,
       final boolean enablePipelinedWrite);
   private native boolean enablePipelinedWrite(final long handle);
+  private native void setUnorderedWrite(final long handle,
+      final boolean unorderedWrite);
+  private native boolean unorderedWrite(final long handle);
   private native void setAllowConcurrentMemtableWrite(long handle,
       boolean allowConcurrentMemtableWrite);
   private native boolean allowConcurrentMemtableWrite(long handle);

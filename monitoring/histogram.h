@@ -16,7 +16,7 @@
 #include <map>
 #include <mutex>
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class HistogramBucketMapper {
  public:
@@ -84,12 +84,12 @@ struct HistogramStat {
   // To be able to use HistogramStat as thread local variable, it
   // cannot have dynamic allocated member. That's why we're
   // using manually values from BucketMapper
+  alignas(64) std::atomic_uint_fast64_t buckets_[109]; // 109==BucketMapper::BucketCount()
   std::atomic_uint_fast64_t min_;
   std::atomic_uint_fast64_t max_;
   std::atomic_uint_fast64_t num_;
   std::atomic_uint_fast64_t sum_;
   std::atomic_uint_fast64_t sum_squares_;
-  std::atomic_uint_fast64_t buckets_[109]; // 109==BucketMapper::BucketCount()
   const uint64_t num_buckets_;
 };
 
@@ -146,4 +146,4 @@ class HistogramImpl : public Histogram {
   std::mutex mutex_;
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

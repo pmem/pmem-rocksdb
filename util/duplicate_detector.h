@@ -5,15 +5,11 @@
 
 #pragma once
 
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS
-#endif
-
-#include <inttypes.h>
+#include <cinttypes>
 
 #include "util/set_comparator.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 // During recovery if the memtable is flushed we cannot rely on its help on
 // duplicate key detection and as key insert will not be attempted. This class
 // will be used as a emulator of memtable to tell if insertion of a key/seq
@@ -69,4 +65,4 @@ class DuplicateDetector {
     keys_[cf] = CFKeys(SetComparator(cmp));
   }
 };
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

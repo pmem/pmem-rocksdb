@@ -12,13 +12,13 @@
 #include <algorithm>
 #include <type_traits>
 
-#include "util/arena.h"
 #include "db/memtable.h"
+#include "memory/arena.h"
 #include "memtable/stl_wrappers.h"
 #include "port/port.h"
 #include "util/mutexlock.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 namespace {
 
 using namespace stl_wrappers;
@@ -297,5 +297,5 @@ MemTableRep* VectorRepFactory::CreateMemTableRep(
     const SliceTransform*, Logger* /*logger*/) {
   return new VectorRep(compare, allocator, count_);
 }
-} // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 #endif  // ROCKSDB_LITE

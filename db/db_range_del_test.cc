@@ -5,10 +5,11 @@
 
 #include "db/db_test_util.h"
 #include "port/stack_trace.h"
-#include "util/testutil.h"
+#include "rocksdb/utilities/write_batch_with_index.h"
+#include "test_util/testutil.h"
 #include "utilities/merge_operators.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class DBRangeDelTest : public DBTestBase {
  public:
@@ -23,8 +24,8 @@ class DBRangeDelTest : public DBTestBase {
   }
 };
 
-// PlainTableFactory and NumTableFilesAtLevel() are not supported in
-// ROCKSDB_LITE
+// PlainTableFactory, WriteBatchWithIndex, and NumTableFilesAtLevel() are not
+// supported in ROCKSDB_LITE
 #ifndef ROCKSDB_LITE
 TEST_F(DBRangeDelTest, NonBlockBasedTableNotSupported) {
   // TODO: figure out why MmapReads trips the iterator pinning assertion in
@@ -37,6 +38,28 @@ TEST_F(DBRangeDelTest, NonBlockBasedTableNotSupported) {
                                  "dr1", "dr1")
                     .IsNotSupported());
   }
+}
+
+TEST_F(DBRangeDelTest, WriteBatchWithIndexNotSupported) {
+  WriteBatchWithIndex indexedBatch{};
+  ASSERT_TRUE(indexedBatch.DeleteRange(db_->DefaultColumnFamily(), "dr1", "dr1")
+                  .IsNotSupported());
+  ASSERT_TRUE(indexedBatch.DeleteRange("dr1", "dr1").IsNotSupported());
+}
+
+TEST_F(DBRangeDelTest, EndSameAsStartCoversNothing) {
+  ASSERT_OK(db_->Put(WriteOptions(), "b", "val"));
+  ASSERT_OK(
+      db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), "b", "b"));
+  ASSERT_EQ("val", Get("b"));
+}
+
+TEST_F(DBRangeDelTest, EndComesBeforeStartInvalidArgument) {
+  db_->Put(WriteOptions(), "b", "val");
+  ASSERT_TRUE(
+      db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), "b", "a")
+          .IsInvalidArgument());
+  ASSERT_EQ("val", Get("b"));
 }
 
 TEST_F(DBRangeDelTest, FlushOutputHasOnlyRangeTombstones) {
@@ -166,7 +189,7 @@ TEST_F(DBRangeDelTest, MaxCompactionBytesCutsOutputFiles) {
   std::vector<std::vector<FileMetaData>> files;
   dbfull()->TEST_GetFilesMetaData(db_->DefaultColumnFamily(), &files);
 
-  for (size_t i = 0; i < files[1].size() - 1; ++i) {
+  for (size_t i = 0; i + 1 < files[1].size(); ++i) {
     ASSERT_TRUE(InternalKeyComparator(opts.comparator)
                     .Compare(files[1][i].largest, files[1][i + 1].smallest) <
                 0);
@@ -917,7 +940,8 @@ TEST_F(DBRangeDelTest, MemtableBloomFilter) {
   Options options = CurrentOptions();
   options.memtable_prefix_bloom_size_ratio =
       static_cast<double>(kMemtablePrefixFilterSize) / kMemtableSize;
-  options.prefix_extractor.reset(rocksdb::NewFixedPrefixTransform(kPrefixLen));
+  options.prefix_extractor.reset(
+      ROCKSDB_NAMESPACE::NewFixedPrefixTransform(kPrefixLen));
   options.write_buffer_size = kMemtableSize;
   Reopen(options);
 
@@ -1070,7 +1094,7 @@ TEST_F(DBRangeDelTest, RangeTombstoneEndKeyAsSstableUpperBound) {
     // endpoint (key000002#6,1) to disappear.
     ASSERT_EQ(value, Get(Key(2)));
     auto begin_str = Key(3);
-    const rocksdb::Slice begin = begin_str;
+    const ROCKSDB_NAMESPACE::Slice begin = begin_str;
     dbfull()->TEST_CompactRange(1, &begin, nullptr);
     ASSERT_EQ(1, NumTableFilesAtLevel(1));
     ASSERT_EQ(2, NumTableFilesAtLevel(2));
@@ -1089,7 +1113,7 @@ TEST_F(DBRangeDelTest, RangeTombstoneEndKeyAsSstableUpperBound) {
     //     [key000001#5,1, key000002#72057594037927935,15]
     //     [key000002#6,1, key000004#72057594037927935,15]
     auto begin_str = Key(0);
-    const rocksdb::Slice begin = begin_str;
+    const ROCKSDB_NAMESPACE::Slice begin = begin_str;
     dbfull()->TEST_CompactRange(1, &begin, &begin);
     ASSERT_EQ(0, NumTableFilesAtLevel(1));
     ASSERT_EQ(3, NumTableFilesAtLevel(2));
@@ -1427,6 +1451,47 @@ TEST_F(DBRangeDelTest, SnapshotPreventsDroppedKeys) {
   db_->ReleaseSnapshot(snapshot);
 }
 
+TEST_F(DBRangeDelTest, SnapshotPreventsDroppedKeysInImmMemTables) {
+  const int kFileBytes = 1 << 20;
+
+  Options options = CurrentOptions();
+  options.compression = kNoCompression;
+  options.disable_auto_compactions = true;
+  options.target_file_size_base = kFileBytes;
+  Reopen(options);
+
+  // block flush thread -> pin immtables in memory
+  SyncPoint::GetInstance()->DisableProcessing();
+  SyncPoint::GetInstance()->LoadDependency({
+      {"SnapshotPreventsDroppedKeysInImmMemTables:AfterNewIterator",
+       "DBImpl::BGWorkFlush"},
+  });
+  SyncPoint::GetInstance()->EnableProcessing();
+
+  ASSERT_OK(Put(Key(0), "a"));
+  std::unique_ptr<const Snapshot, std::function<void(const Snapshot*)>>
+      snapshot(db_->GetSnapshot(),
+               [this](const Snapshot* s) { db_->ReleaseSnapshot(s); });
+
+  ASSERT_OK(db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), Key(0),
+                             Key(10)));
+
+  ASSERT_OK(dbfull()->TEST_SwitchMemtable());
+
+  ReadOptions read_opts;
+  read_opts.snapshot = snapshot.get();
+  std::unique_ptr<Iterator> iter(db_->NewIterator(read_opts));
+
+  TEST_SYNC_POINT("SnapshotPreventsDroppedKeysInImmMemTables:AfterNewIterator");
+
+  iter->SeekToFirst();
+  ASSERT_TRUE(iter->Valid());
+  ASSERT_EQ(Key(0), iter->key());
+
+  iter->Next();
+  ASSERT_FALSE(iter->Valid());
+}
+
 TEST_F(DBRangeDelTest, RangeTombstoneWrittenToMinimalSsts) {
   // Adapted from
   // https://github.com/cockroachdb/cockroach/blob/de8b3ea603dd1592d9dc26443c2cc92c356fbc2f/pkg/storage/engine/rocksdb_test.go#L1267-L1398.
@@ -1521,12 +1586,90 @@ TEST_F(DBRangeDelTest, RangeTombstoneWrittenToMinimalSsts) {
   ASSERT_EQ(1, num_range_deletions);
 }
 
+TEST_F(DBRangeDelTest, OverlappedTombstones) {
+  const int kNumPerFile = 4, kNumFiles = 2;
+  Options options = CurrentOptions();
+  options.disable_auto_compactions = true;
+  options.max_compaction_bytes = 9 * 1024;
+  DestroyAndReopen(options);
+  Random rnd(301);
+  for (int i = 0; i < kNumFiles; ++i) {
+    std::vector<std::string> values;
+    // Write 12K (4 values, each 3K)
+    for (int j = 0; j < kNumPerFile; j++) {
+      values.push_back(RandomString(&rnd, 3 << 10));
+      ASSERT_OK(Put(Key(i * kNumPerFile + j), values[j]));
+    }
+  }
+  ASSERT_OK(db_->Flush(FlushOptions()));
+  ASSERT_EQ(1, NumTableFilesAtLevel(0));
+  MoveFilesToLevel(2);
+  ASSERT_EQ(2, NumTableFilesAtLevel(2));
+
+  ASSERT_OK(db_->DeleteRange(WriteOptions(), db_->DefaultColumnFamily(), Key(1),
+                             Key((kNumFiles)*kNumPerFile + 1)));
+  ASSERT_OK(db_->Flush(FlushOptions()));
+
+  ASSERT_EQ(1, NumTableFilesAtLevel(0));
+
+  dbfull()->TEST_CompactRange(0, nullptr, nullptr, nullptr,
+                              true /* disallow_trivial_move */);
+
+  // The tombstone range is not broken up into multiple SSTs which may incur a
+  // large compaction with L2.
+  ASSERT_EQ(1, NumTableFilesAtLevel(1));
+  std::vector<std::vector<FileMetaData>> files;
+  dbfull()->TEST_CompactRange(1, nullptr, nullptr, nullptr,
+                              true /* disallow_trivial_move */);
+  ASSERT_EQ(1, NumTableFilesAtLevel(2));
+  ASSERT_EQ(0, NumTableFilesAtLevel(1));
+}
+
+TEST_F(DBRangeDelTest, OverlappedKeys) {
+  const int kNumPerFile = 4, kNumFiles = 2;
+  Options options = CurrentOptions();
+  options.disable_auto_compactions = true;
+  options.max_compaction_bytes = 9 * 1024;
+  DestroyAndReopen(options);
+  Random rnd(301);
+  for (int i = 0; i < kNumFiles; ++i) {
+    std::vector<std::string> values;
+    // Write 12K (4 values, each 3K)
+    for (int j = 0; j < kNumPerFile; j++) {
+      values.push_back(RandomString(&rnd, 3 << 10));
+      ASSERT_OK(Put(Key(i * kNumPerFile + j), values[j]));
+    }
+  }
+  ASSERT_OK(db_->Flush(FlushOptions()));
+  ASSERT_EQ(1, NumTableFilesAtLevel(0));
+  MoveFilesToLevel(2);
+  ASSERT_EQ(2, NumTableFilesAtLevel(2));
+
+  for (int i = 1; i < kNumFiles * kNumPerFile + 1; i++) {
+    ASSERT_OK(Put(Key(i), "0x123"));
+  }
+  ASSERT_OK(db_->Flush(FlushOptions()));
+  ASSERT_EQ(1, NumTableFilesAtLevel(0));
+
+  // The key range is broken up into three SSTs to avoid a future big compaction
+  // with the grandparent
+  dbfull()->TEST_CompactRange(0, nullptr, nullptr, nullptr,
+                              true /* disallow_trivial_move */);
+  ASSERT_EQ(3, NumTableFilesAtLevel(1));
+
+  std::vector<std::vector<FileMetaData>> files;
+  dbfull()->TEST_CompactRange(1, nullptr, nullptr, nullptr,
+                              true /* disallow_trivial_move */);
+  ASSERT_EQ(1, NumTableFilesAtLevel(2));
+  ASSERT_EQ(0, NumTableFilesAtLevel(1));
+}
+
 #endif  // ROCKSDB_LITE
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
-  rocksdb::port::InstallStackTraceHandler();
+  ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

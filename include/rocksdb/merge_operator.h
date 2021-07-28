@@ -12,7 +12,7 @@
 
 #include "rocksdb/slice.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class Slice;
 class Logger;
@@ -46,6 +46,7 @@ class Logger;
 class MergeOperator {
  public:
   virtual ~MergeOperator() {}
+  static const char* Type() { return "MergeOperator"; }
 
   // Gives the client a way to express the read -> modify -> write semantics
   // key:      (IN)    The key that's associated with this merge operation.
@@ -124,7 +125,7 @@ class MergeOperator {
   // In the example above, Get(K) operation will call FullMerge with a base
   // value of 2 and operands [+1, +2]. Compaction process might decide to
   // collapse the beginning of the history up to the snapshot by performing
-  // full Merge with base value of 0 and operands [+1, +2, +7, +3].
+  // full Merge with base value of 0 and operands [+1, +2, +7, +4].
   virtual bool FullMergeV2(const MergeOperationInput& merge_in,
                            MergeOperationOutput* merge_out) const;
 
@@ -253,4 +254,4 @@ class AssociativeMergeOperator : public MergeOperator {
                     Logger* logger) const override;
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

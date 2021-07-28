@@ -7,7 +7,7 @@
 #include "monitoring/iostats_context_imp.h"
 #include "rocksdb/env.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 #ifdef ROCKSDB_SUPPORT_THREAD_LOCAL
 __thread IOStatsContext iostats_context;
@@ -54,7 +54,9 @@ std::string IOStatsContext::ToString(bool exclude_zero_counters) const {
   IOSTATS_CONTEXT_OUTPUT(prepare_write_nanos);
   IOSTATS_CONTEXT_OUTPUT(logger_nanos);
 
-  return ss.str();
+  std::string str = ss.str();
+  str.erase(str.find_last_not_of(", ") + 1);
+  return str;
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

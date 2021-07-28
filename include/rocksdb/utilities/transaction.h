@@ -14,7 +14,7 @@
 #include "rocksdb/db.h"
 #include "rocksdb/status.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class Iterator;
 class TransactionDB;
@@ -52,6 +52,10 @@ class TransactionNotifier {
 //  -Support for using Transactions with DBWithTTL
 class Transaction {
  public:
+  // No copying allowed
+  Transaction(const Transaction&) = delete;
+  void operator=(const Transaction&) = delete;
+
   virtual ~Transaction() {}
 
   // If a transaction has a snapshot set, the transaction will ensure that
@@ -131,11 +135,13 @@ class Transaction {
   // Status::Busy() may be returned if the transaction could not guarantee
   // that there are no write conflicts.  Status::TryAgain() may be returned
   // if the memtable history size is not large enough
-  //  (See max_write_buffer_number_to_maintain).
+  //  (See max_write_buffer_size_to_maintain).
   //
   // If this transaction was created by a TransactionDB(), Status::Expired()
   // may be returned if this transaction has lived for longer than
-  // TransactionOptions.expiration.
+  // TransactionOptions.expiration. Status::TxnNotPrepared() may be returned if
+  // TransactionOptions.skip_prepare is false and Prepare is not called on this
+  // transaction before Commit.
   virtual Status Commit() = 0;
 
   // Discard all batched writes in this transaction.
@@ -243,7 +249,7 @@ class Transaction {
   // Status::Busy() if there is a write conflict,
   // Status::TimedOut() if a lock could not be acquired,
   // Status::TryAgain() if the memtable history size is not large enough
-  //  (See max_write_buffer_number_to_maintain)
+  //  (See max_write_buffer_size_to_maintain)
   // Status::MergeInProgress() if merge operations cannot be resolved.
   // or other errors if this key could not be read.
   virtual Status GetForUpdate(const ReadOptions& options,
@@ -320,7 +326,7 @@ class Transaction {
   // Status::Busy() if there is a write conflict,
   // Status::TimedOut() if a lock could not be acquired,
   // Status::TryAgain() if the memtable history size is not large enough
-  //  (See max_write_buffer_number_to_maintain)
+  //  (See max_write_buffer_size_to_maintain)
   // or other errors on unexpected failures.
   virtual Status Put(ColumnFamilyHandle* column_family, const Slice& key,
                      const Slice& value, const bool assume_tracked = false) = 0;
@@ -487,7 +493,8 @@ class Transaction {
     AWAITING_PREPARE = 1,
     PREPARED = 2,
     AWAITING_COMMIT = 3,
-    COMMITED = 4,
+    COMMITTED = 4,
+    COMMITED = COMMITTED, // old misspelled name
     AWAITING_ROLLBACK = 5,
     ROLLEDBACK = 6,
     LOCKS_STOLEN = 7,
@@ -522,14 +529,15 @@ class Transaction {
     id_ = id;
   }
 
+  virtual uint64_t GetLastLogNumber() const { return log_number_; }
+
  private:
   friend class PessimisticTransactionDB;
   friend class WriteUnpreparedTxnDB;
-  // No copying allowed
-  Transaction(const Transaction&);
-  void operator=(const Transaction&);
+  friend class TransactionTest_TwoPhaseLogRollingTest_Test;
+  friend class TransactionTest_TwoPhaseLogRollingTest2_Test;
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 #endif  // ROCKSDB_LITE

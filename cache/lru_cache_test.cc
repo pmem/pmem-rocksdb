@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 #include "port/port.h"
-#include "util/testharness.h"
+#include "test_util/testharness.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class LRUCacheTest : public testing::Test {
  public:
@@ -31,7 +31,8 @@ class LRUCacheTest : public testing::Test {
     cache_ = reinterpret_cast<LRUCacheShard*>(
         port::cacheline_aligned_alloc(sizeof(LRUCacheShard)));
     new (cache_) LRUCacheShard(capacity, false /*strict_capcity_limit*/,
-                               high_pri_pool_ratio, use_adaptive_mutex);
+                               high_pri_pool_ratio, use_adaptive_mutex,
+                               kDontChargeCacheMetadata);
   }
 
   void Insert(const std::string& key,
@@ -189,7 +190,7 @@ TEST_F(LRUCacheTest, EntriesWithPriority) {
   ValidateLRUList({"e", "f", "g", "Z", "d"}, 2);
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);

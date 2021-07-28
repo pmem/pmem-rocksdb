@@ -5,17 +5,17 @@
 
 #ifndef ROCKSDB_LITE
 
-#include "db/db_impl.h"
+#include "db/db_impl/db_impl.h"
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
-#include "table/cuckoo_table_factory.h"
-#include "table/cuckoo_table_reader.h"
+#include "table/cuckoo/cuckoo_table_factory.h"
+#include "table/cuckoo/cuckoo_table_reader.h"
 #include "table/meta_blocks.h"
+#include "test_util/testharness.h"
+#include "test_util/testutil.h"
 #include "util/string_util.h"
-#include "util/testharness.h"
-#include "util/testutil.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class CuckooTableDBTest : public testing::Test {
  private:
@@ -285,6 +285,9 @@ TEST_F(CuckooTableDBTest, SameKeyInsertedInTwoDifferentFilesAndCompacted) {
 TEST_F(CuckooTableDBTest, AdaptiveTable) {
   Options options = CurrentOptions();
 
+  // Ensure options compatible with PlainTable
+  options.prefix_extractor.reset(NewCappedPrefixTransform(8));
+
   // Write some keys using cuckoo table.
   options.table_factory.reset(NewCuckooTableFactory());
   Reopen(&options);
@@ -295,17 +298,25 @@ TEST_F(CuckooTableDBTest, AdaptiveTable) {
   dbfull()->TEST_FlushMemTable();
 
   // Write some keys using plain table.
+  std::shared_ptr<TableFactory> block_based_factory(
+      NewBlockBasedTableFactory());
+  std::shared_ptr<TableFactory> plain_table_factory(
+      NewPlainTableFactory());
+  std::shared_ptr<TableFactory> cuckoo_table_factory(
+      NewCuckooTableFactory());
   options.create_if_missing = false;
-  options.table_factory.reset(NewPlainTableFactory());
+  options.table_factory.reset(NewAdaptiveTableFactory(
+    plain_table_factory, block_based_factory, plain_table_factory,
+    cuckoo_table_factory));
   Reopen(&options);
   ASSERT_OK(Put("key4", "v4"));
   ASSERT_OK(Put("key1", "v5"));
   dbfull()->TEST_FlushMemTable();
 
   // Write some keys using block based table.
-  std::shared_ptr<TableFactory> block_based_factory(
-      NewBlockBasedTableFactory());
-  options.table_factory.reset(NewAdaptiveTableFactory(block_based_factory));
+  options.table_factory.reset(NewAdaptiveTableFactory(
+    block_based_factory, block_based_factory, plain_table_factory,
+    cuckoo_table_factory));
   Reopen(&options);
   ASSERT_OK(Put("key5", "v6"));
   ASSERT_OK(Put("key2", "v7"));
@@ -317,14 +328,13 @@ TEST_F(CuckooTableDBTest, AdaptiveTable) {
   ASSERT_EQ("v4", Get("key4"));
   ASSERT_EQ("v6", Get("key5"));
 }
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
-  if (rocksdb::port::kLittleEndian) {
+  if (ROCKSDB_NAMESPACE::port::kLittleEndian) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
-  }
-  else {
+  } else {
     fprintf(stderr, "SKIPPED as Cuckoo table doesn't support Big Endian\n");
     return 0;
   }

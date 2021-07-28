@@ -14,7 +14,7 @@
 #include "rocksdb/statistics.h"
 #include "rocksdb/status.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class SimCache;
 
@@ -34,6 +34,10 @@ class SimCache;
 // sim_capacity * 2%
 extern std::shared_ptr<SimCache> NewSimCache(std::shared_ptr<Cache> cache,
                                              size_t sim_capacity,
+                                             int num_shard_bits);
+
+extern std::shared_ptr<SimCache> NewSimCache(std::shared_ptr<Cache> sim_cache,
+                                             std::shared_ptr<Cache> cache,
                                              int num_shard_bits);
 
 class SimCache : public Cache {
@@ -87,4 +91,4 @@ class SimCache : public Cache {
   SimCache& operator=(const SimCache&);
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

@@ -7,20 +7,20 @@
 #include <map>
 #include <string>
 
+#include "block_fetcher.h"
 #include "db/table_properties_collector.h"
+#include "file/random_access_file_reader.h"
 #include "rocksdb/table.h"
 #include "rocksdb/table_properties.h"
-#include "table/block.h"
-#include "table/block_fetcher.h"
+#include "table/block_based/block.h"
 #include "table/format.h"
 #include "table/internal_iterator.h"
 #include "table/persistent_cache_helper.h"
 #include "table/table_properties_internal.h"
+#include "test_util/sync_point.h"
 #include "util/coding.h"
-#include "util/file_reader_writer.h"
-#include "util/sync_point.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 MetaIndexBuilder::MetaIndexBuilder()
     : meta_index_block_(new BlockBuilder(1 /* restart interval */)) {}
@@ -216,7 +216,8 @@ Status ReadProperties(const Slice& handle_value, RandomAccessFileReader* file,
   BlockFetcher block_fetcher(
       file, prefetch_buffer, footer, read_options, handle, &block_contents,
       ioptions, false /* decompress */, false /*maybe_compressed*/,
-      UncompressionDict::GetEmptyDict(), cache_options, memory_allocator);
+      BlockType::kProperties, UncompressionDict::GetEmptyDict(), cache_options,
+      memory_allocator);
   s = block_fetcher.ReadBlockContents();
   // property block is never compressed. Need to add uncompress logic if we are
   // to compress it..
@@ -225,11 +226,10 @@ Status ReadProperties(const Slice& handle_value, RandomAccessFileReader* file,
     return s;
   }
 
-  Block properties_block(std::move(block_contents),
-                         kDisableGlobalSequenceNumber);
+  Block properties_block(std::move(block_contents));
   DataBlockIter iter;
-  properties_block.NewIterator<DataBlockIter>(BytewiseComparator(),
-                                              BytewiseComparator(), &iter);
+  properties_block.NewDataIterator(BytewiseComparator(), BytewiseComparator(),
+                                   kDisableGlobalSequenceNumber, &iter);
 
   auto new_table_properties = new TableProperties();
   // All pre-defined properties of type uint64_t
@@ -340,7 +340,8 @@ Status ReadProperties(const Slice& handle_value, RandomAccessFileReader* file,
     }
     if (verification_buf != nullptr) {
       size_t len = static_cast<size_t>(handle.size() + kBlockTrailerSize);
-      *verification_buf = rocksdb::AllocateBlock(len, memory_allocator);
+      *verification_buf =
+          ROCKSDB_NAMESPACE::AllocateBlock(len, memory_allocator);
       if (verification_buf->get() != nullptr) {
         memcpy(verification_buf->get(), block_contents.data.data(), len);
       }
@@ -357,11 +358,12 @@ Status ReadTableProperties(RandomAccessFileReader* file, uint64_t file_size,
                            const ImmutableCFOptions& ioptions,
                            TableProperties** properties,
                            bool compression_type_missing,
-                           MemoryAllocator* memory_allocator) {
+                           MemoryAllocator* memory_allocator,
+                           FilePrefetchBuffer* prefetch_buffer) {
   // -- Read metaindex block
   Footer footer;
-  auto s = ReadFooterFromFile(file, nullptr /* prefetch_buffer */, file_size,
-                              &footer, table_magic_number);
+  auto s = ReadFooterFromFile(file, prefetch_buffer, file_size, &footer,
+                              table_magic_number);
   if (!s.ok()) {
     return s;
   }
@@ -373,21 +375,20 @@ Status ReadTableProperties(RandomAccessFileReader* file, uint64_t file_size,
   PersistentCacheOptions cache_options;
 
   BlockFetcher block_fetcher(
-      file, nullptr /* prefetch_buffer */, footer, read_options,
-      metaindex_handle, &metaindex_contents, ioptions, false /* decompress */,
-      false /*maybe_compressed*/, UncompressionDict::GetEmptyDict(),
-      cache_options, memory_allocator);
+      file, prefetch_buffer, footer, read_options, metaindex_handle,
+      &metaindex_contents, ioptions, false /* decompress */,
+      false /*maybe_compressed*/, BlockType::kMetaIndex,
+      UncompressionDict::GetEmptyDict(), cache_options, memory_allocator);
   s = block_fetcher.ReadBlockContents();
   if (!s.ok()) {
     return s;
   }
   // property blocks are never compressed. Need to add uncompress logic if we
   // are to compress it.
-  Block metaindex_block(std::move(metaindex_contents),
-                        kDisableGlobalSequenceNumber);
-  std::unique_ptr<InternalIterator> meta_iter(
-      metaindex_block.NewIterator<DataBlockIter>(BytewiseComparator(),
-                                                 BytewiseComparator()));
+  Block metaindex_block(std::move(metaindex_contents));
+  std::unique_ptr<InternalIterator> meta_iter(metaindex_block.NewDataIterator(
+      BytewiseComparator(), BytewiseComparator(),
+      kDisableGlobalSequenceNumber));
 
   // -- Read property block
   bool found_properties_block = true;
@@ -398,11 +399,11 @@ Status ReadTableProperties(RandomAccessFileReader* file, uint64_t file_size,
 
   TableProperties table_properties;
   if (found_properties_block == true) {
-    s = ReadProperties(
-        meta_iter->value(), file, nullptr /* prefetch_buffer */, footer,
-        ioptions, properties, false /* verify_checksum */,
-        nullptr /* ret_block_hanel */, nullptr /* ret_block_contents */,
-        compression_type_missing, memory_allocator);
+    s = ReadProperties(meta_iter->value(), file, prefetch_buffer, footer,
+                       ioptions, properties, false /* verify_checksum */,
+                       nullptr /* ret_block_hanel */,
+                       nullptr /* ret_block_contents */,
+                       compression_type_missing, memory_allocator);
   } else {
     s = Status::NotFound();
   }
@@ -446,19 +447,20 @@ Status FindMetaBlock(RandomAccessFileReader* file, uint64_t file_size,
       file, nullptr /* prefetch_buffer */, footer, read_options,
       metaindex_handle, &metaindex_contents, ioptions,
       false /* do decompression */, false /*maybe_compressed*/,
-      UncompressionDict::GetEmptyDict(), cache_options, memory_allocator);
+      BlockType::kMetaIndex, UncompressionDict::GetEmptyDict(), cache_options,
+      memory_allocator);
   s = block_fetcher.ReadBlockContents();
   if (!s.ok()) {
     return s;
   }
   // meta blocks are never compressed. Need to add uncompress logic if we are to
   // compress it.
-  Block metaindex_block(std::move(metaindex_contents),
-                        kDisableGlobalSequenceNumber);
+  Block metaindex_block(std::move(metaindex_contents));
 
   std::unique_ptr<InternalIterator> meta_iter;
-  meta_iter.reset(metaindex_block.NewIterator<DataBlockIter>(
-      BytewiseComparator(), BytewiseComparator()));
+  meta_iter.reset(metaindex_block.NewDataIterator(
+      BytewiseComparator(), BytewiseComparator(),
+      kDisableGlobalSequenceNumber));
 
   return FindMetaBlock(meta_iter.get(), meta_block_name, block_handle);
 }
@@ -467,7 +469,7 @@ Status ReadMetaBlock(RandomAccessFileReader* file,
                      FilePrefetchBuffer* prefetch_buffer, uint64_t file_size,
                      uint64_t table_magic_number,
                      const ImmutableCFOptions& ioptions,
-                     const std::string& meta_block_name,
+                     const std::string& meta_block_name, BlockType block_type,
                      BlockContents* contents, bool /*compression_type_missing*/,
                      MemoryAllocator* memory_allocator) {
   Status status;
@@ -485,11 +487,11 @@ Status ReadMetaBlock(RandomAccessFileReader* file,
   read_options.verify_checksums = false;
   PersistentCacheOptions cache_options;
 
-  BlockFetcher block_fetcher(file, prefetch_buffer, footer, read_options,
-                             metaindex_handle, &metaindex_contents, ioptions,
-                             false /* decompress */, false /*maybe_compressed*/,
-                             UncompressionDict::GetEmptyDict(), cache_options,
-                             memory_allocator);
+  BlockFetcher block_fetcher(
+      file, prefetch_buffer, footer, read_options, metaindex_handle,
+      &metaindex_contents, ioptions, false /* decompress */,
+      false /*maybe_compressed*/, BlockType::kMetaIndex,
+      UncompressionDict::GetEmptyDict(), cache_options, memory_allocator);
   status = block_fetcher.ReadBlockContents();
   if (!status.ok()) {
     return status;
@@ -498,12 +500,12 @@ Status ReadMetaBlock(RandomAccessFileReader* file,
   // compress it.
 
   // Finding metablock
-  Block metaindex_block(std::move(metaindex_contents),
-                        kDisableGlobalSequenceNumber);
+  Block metaindex_block(std::move(metaindex_contents));
 
   std::unique_ptr<InternalIterator> meta_iter;
-  meta_iter.reset(metaindex_block.NewIterator<DataBlockIter>(
-      BytewiseComparator(), BytewiseComparator()));
+  meta_iter.reset(metaindex_block.NewDataIterator(
+      BytewiseComparator(), BytewiseComparator(),
+      kDisableGlobalSequenceNumber));
 
   BlockHandle block_handle;
   status = FindMetaBlock(meta_iter.get(), meta_block_name, &block_handle);
@@ -515,9 +517,9 @@ Status ReadMetaBlock(RandomAccessFileReader* file,
   // Reading metablock
   BlockFetcher block_fetcher2(
       file, prefetch_buffer, footer, read_options, block_handle, contents,
-      ioptions, false /* decompress */, false /*maybe_compressed*/,
+      ioptions, false /* decompress */, false /*maybe_compressed*/, block_type,
       UncompressionDict::GetEmptyDict(), cache_options, memory_allocator);
   return block_fetcher2.ReadBlockContents();
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

@@ -9,18 +9,18 @@
 
 #ifndef ROCKSDB_LITE
 
-#include <memory>
+#include "rocksdb/utilities/write_batch_with_index.h"
 #include <map>
+#include <memory>
 #include "db/column_family.h"
 #include "port/stack_trace.h"
-#include "rocksdb/utilities/write_batch_with_index.h"
+#include "test_util/testharness.h"
 #include "util/random.h"
 #include "util/string_util.h"
-#include "util/testharness.h"
 #include "utilities/merge_operators.h"
 #include "utilities/merge_operators/string_append/stringappend.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 namespace {
 class ColumnFamilyHandleImplDummy : public ColumnFamilyHandleImpl {
@@ -1308,6 +1308,37 @@ TEST_F(WriteBatchWithIndexTest, TestGetFromBatchAndDBMerge2) {
   DestroyDB(dbname, options);
 }
 
+TEST_F(WriteBatchWithIndexTest, TestGetFromBatchAndDBMerge3) {
+  DB* db;
+  Options options;
+
+  options.create_if_missing = true;
+  std::string dbname = test::PerThreadDBPath("write_batch_with_index_test");
+
+  options.merge_operator = MergeOperators::CreateFromStringId("stringappend");
+
+  DestroyDB(dbname, options);
+  Status s = DB::Open(options, dbname, &db);
+  assert(s.ok());
+
+  ReadOptions read_options;
+  WriteOptions write_options;
+  FlushOptions flush_options;
+  std::string value;
+
+  WriteBatchWithIndex batch;
+
+  ASSERT_OK(db->Put(write_options, "A", "1"));
+  ASSERT_OK(db->Flush(flush_options, db->DefaultColumnFamily()));
+  ASSERT_OK(batch.Merge("A", "2"));
+
+  ASSERT_OK(batch.GetFromBatchAndDB(db, read_options, "A", &value));
+  ASSERT_EQ(value, "1,2");
+
+  delete db;
+  DestroyDB(dbname, options);
+}
+
 void AssertKey(std::string key, WBWIIterator* iter) {
   ASSERT_TRUE(iter->Valid());
   ASSERT_EQ(key, iter->Entry().key.ToString());
@@ -1796,10 +1827,10 @@ TEST_F(WriteBatchWithIndexTest, SingleDeleteDeltaIterTest) {
   ASSERT_EQ("B:b3,E:ee,", value);
 }
 
-}  // namespace
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
-  rocksdb::port::InstallStackTraceHandler();
+  ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

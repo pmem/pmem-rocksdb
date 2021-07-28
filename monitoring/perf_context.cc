@@ -7,7 +7,7 @@
 #include <sstream>
 #include "monitoring/perf_context_imp.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 #if defined(NPERF_CONTEXT) || !defined(ROCKSDB_SUPPORT_THREAD_LOCAL)
 PerfContext perf_context;
@@ -38,7 +38,9 @@ PerfContext::~PerfContext() {
 }
 
 PerfContext::PerfContext(const PerfContext& other) {
-#ifndef NPERF_CONTEXT
+#ifdef NPERF_CONTEXT
+  (void)other;
+#else
   user_key_comparison_count = other.user_key_comparison_count;
   block_cache_hit_count = other.block_cache_hit_count;
   block_read_count = other.block_read_count;
@@ -133,7 +135,9 @@ PerfContext::PerfContext(const PerfContext& other) {
 }
 
 PerfContext::PerfContext(PerfContext&& other) noexcept {
-#ifndef NPERF_CONTEXT
+#ifdef NPERF_CONTEXT
+  (void)other;
+#else
   user_key_comparison_count = other.user_key_comparison_count;
   block_cache_hit_count = other.block_cache_hit_count;
   block_read_count = other.block_read_count;
@@ -230,7 +234,9 @@ PerfContext::PerfContext(PerfContext&& other) noexcept {
 // TODO(Zhongyi): reduce code duplication between copy constructor and
 // assignment operator
 PerfContext& PerfContext::operator=(const PerfContext& other) {
-#ifndef NPERF_CONTEXT
+#ifdef NPERF_CONTEXT
+  (void)other;
+#else
   user_key_comparison_count = other.user_key_comparison_count;
   block_cache_hit_count = other.block_cache_hit_count;
   block_read_count = other.block_read_count;
@@ -407,6 +413,28 @@ void PerfContext::Reset() {
   iter_next_cpu_nanos = 0;
   iter_prev_cpu_nanos = 0;
   iter_seek_cpu_nanos = 0;
+
+  total_get_time = 0;
+  retrieve_data_block = 0;
+  update_block_cache = 0;
+  data_block_seek = 0;
+  match_filter = 0;
+
+  write_time = 0;
+  write_process_time = 0;
+  writer_wait = 0;
+
+  time1 = 0;
+  time2 = 0;
+  time3 = 0;
+  time4 = 0;
+  time5 = 0;
+  time6 = 0;
+  time7 = 0;
+  time8 = 0;
+  time9 = 0;
+  time10 = 0;
+
   if (per_level_perf_context_enabled && level_to_perf_context) {
     for (auto& kv : *level_to_perf_context) {
       kv.second.Reset();
@@ -443,6 +471,7 @@ void PerfContextByLevel::Reset() {
 
 std::string PerfContext::ToString(bool exclude_zero_counters) const {
 #ifdef NPERF_CONTEXT
+  (void)exclude_zero_counters;
   return "";
 #else
   std::ostringstream ss;
@@ -529,7 +558,10 @@ std::string PerfContext::ToString(bool exclude_zero_counters) const {
   PERF_CONTEXT_BY_LEVEL_OUTPUT_ONE_COUNTER(bloom_filter_full_true_positive);
   PERF_CONTEXT_BY_LEVEL_OUTPUT_ONE_COUNTER(block_cache_hit_count);
   PERF_CONTEXT_BY_LEVEL_OUTPUT_ONE_COUNTER(block_cache_miss_count);
-  return ss.str();
+
+  std::string str = ss.str();
+  str.erase(str.find_last_not_of(", ") + 1);
+  return str;
 #endif
 }
 
@@ -553,4 +585,4 @@ void PerfContext::ClearPerLevelPerfContext(){
   per_level_perf_context_enabled = false;
 }
 
-}
+}  // namespace ROCKSDB_NAMESPACE

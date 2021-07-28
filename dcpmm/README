@@ -3,10 +3,10 @@ files in PMEM-awared filesystem.
 
 It has been compiled and testing against Linux 4.10 + ext4 with -o dax.
 
-The configuration assumes that packages libpmem are installed.
+The configuration assumes that packages libpmem and libpmemobj are installed.
 
 The env_dcpmm.h file defines the rocksdb objects that are needed to talk to an
 underlying filesystem.
 
 If you want to compile rocksdb with dcpmm support, please set the make argument:
-   ROCKSDB_WAL_ON_DCPMM=1
+   ROCKSDB_ON_DCPMM=1

@@ -5,21 +5,158 @@
 //  (found in the LICENSE.Apache file in the root directory).
 //
 
-#include "rocksdb/env.h"
-#include "dcpmm/env_dcpmm.h"
+#include "env_dcpmm.h"
 
-#ifdef WAL_ON_DCPMM
+#include "io_posix.h"
+#include "rocksdb/env.h"
+#include "rocksdb/file_system.h"
+
+#ifdef ON_DCPMM
 #include <errno.h>
 #include <fcntl.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <libpmem.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <unistd.h>
+
+#include <iostream>
+
+#include "env_dcpmm.h"
+#include "libpmem.h"
 
 namespace rocksdb {
 
-namespace {
+#ifndef MAP_SYNC
+#define MAP_SYNC 0x80000
+#endif
+
+#ifndef MAP_SHARED_VALIDATE
+#define MAP_SHARED_VALIDATE 0x03
+#endif
+
+DCPMMMmapFile::DCPMMMmapFile(const std::string& fname, int fd, size_t page_size, const EnvOptions& options)
+    : filename_(fname),
+      fd_(fd),
+      page_size_(page_size),
+      map_size_(Roundup(1<<25 /*32MB*/, page_size)),
+      base_(nullptr),
+      limit_(nullptr),
+      dst_(nullptr),
+      last_sync_(nullptr),
+      file_offset_(0) {
+#ifdef ROCKSDB_FALLOCATE_PRESENT
+  allow_fallocate_ = options.allow_fallocate;
+  fallocate_with_keep_size_ = options.fallocate_with_keep_size;
+#else
+  (void)options;
+#endif
+  assert((page_size & (page_size - 1)) == 0);
+  assert(options.use_mmap_writes);
+  assert(!options.use_direct_writes);
+}
+
+IOStatus DCPMMMmapFile::UnmapCurrentRegion() {
+  return IOStatus::OK();
+}
+
+#ifdef ROCKSDB_FALLOCATE_PRESENT
+IOStatus DCPMMMmapFile::Allocate(uint64_t , uint64_t , const IOOptions& , IODebugContext* ) {
+  return IOStatus::NotSupported();
+}
+#endif
+
+DCPMMMmapFile::~DCPMMMmapFile() {
+  if (fd_ >= 0) {
+    close(fd_);
+  }
+}
+
+IOStatus DCPMMMmapFile::MapNewRegion() {
+  size_t mmap_len;
+  int is_pmem;
+  base_ = (char*)pmem_map_file(filename_.c_str(), file_offset_+map_size_, PMEM_FILE_EXCL, 0666, &mmap_len, &is_pmem);
+  if(base_ == nullptr){
+    base_ = (char*)pmem_map_file(filename_.c_str(), file_offset_+map_size_, PMEM_FILE_CREATE, 0666, &mmap_len, &is_pmem);
+    if(base_ == nullptr){
+      return IOStatus::IOError("dcpmm map file error");
+    }
+  }
+  limit_ = base_ + mmap_len;
+  dst_ = base_+file_offset_;
+  return IOStatus::OK();
+}
+
+IOStatus DCPMMMmapFile::Append(const Slice& data, const IOOptions& , IODebugContext* ) {
+  const char* src = data.data();
+  size_t left = data.size();
+  while(left > 0){
+    assert(base_ <= dst_);
+    assert(dst_ <= limit_);
+    size_t avail = limit_ - dst_;
+    if(avail == 0){
+      IOStatus s = MapNewRegion();
+      if(!s.ok()) {
+        return s;
+      }
+    }
+
+    size_t n = (left <= avail) ? left : avail;
+    assert(dst_);
+    pmem_memcpy_nodrain(dst_, src, n);
+    file_offset_ += n;
+    dst_ += n;
+    src += n;
+    left -= n;
+  }
+  return IOStatus::OK();
+}
+
+IOStatus DCPMMMmapFile::Close(const IOOptions& , IODebugContext* ) {
+  IOStatus s;
+ size_t unused = limit_ - dst_;
+
+ if(unused > 0) {
+   if(ftruncate(fd_, file_offset_) < 0){
+     s = IOError("While ftruncating dcpmm mmaped file", filename_, errno);
+   }
+ }
+
+  if(close(fd_) < 0){
+    if (s.ok()) {
+      s = IOError("While closing mmapped file", filename_, errno);
+    }
+  }
+
+  fd_ = -1;
+  base_ = nullptr;
+  limit_ = nullptr;
+  return s;
+}
+
+IOStatus DCPMMMmapFile::Flush(const IOOptions& , IODebugContext* ) {
+  return IOStatus::OK();
+}
+
+IOStatus DCPMMMmapFile::Sync(const IOOptions& , IODebugContext* ) {
+  pmem_drain();
+  return IOStatus::OK();
+}
+
+IOStatus DCPMMMmapFile::Fsync(const IOOptions& , IODebugContext*) {
+  pmem_drain();
+  return IOStatus::OK();
+}
+
+uint64_t DCPMMMmapFile::GetFileSize(const IOOptions& , IODebugContext* ) {
+  return file_offset_;
+}
+
+IOStatus DCPMMMmapFile::InvalidateCache(size_t , size_t ) {
+  return IOStatus::OK();
+}
+
+//namespace {
 
 class DCPMMWritableFile : public WritableFile {
 public:
@@ -35,7 +172,7 @@ public:
       return s;
     }
     // explicit create new file
-    int fd = open(fname.c_str(), O_CREAT | O_EXCL | O_RDWR);
+    int fd = open(fname.c_str(), O_CREAT | O_EXCL | O_RDWR, 0777);
     if (fd < 0) {
       return Status::IOError(std::string("create '").append(fname)
                               .append("' failed: ").append(strerror(errno)));
@@ -123,7 +260,12 @@ public:
       buffer = (uint8_t*)new_map_base + offset - offset_aligned - data_length;
     }
     MemcpyNT(buffer + data_length, slice.data(), len);
+    // need sfence, make sure all data is persisted to DCPMM
+    __builtin_ia32_sfence();
     data_length += len;
+    SetSizeNT(p_length, data_length);
+    // need sfence, make sure all data is persisted to DCPMM
+    __builtin_ia32_sfence();
     return Status::OK();
   }
 
@@ -148,8 +290,6 @@ public:
 
   Status Sync() override {
     // NT write need on sync
-    SetSizeNT(p_length, data_length);
-    __builtin_ia32_sfence();
     return Status::OK();
   }
 
@@ -287,7 +427,7 @@ private:
   size_t seek;            // next offset to read
 };
 
-}  // Anonymous namespace
+//}  // Anonymous namespace
 
 static bool EndsWith(const std::string& str, const std::string& suffix) {
   auto str_len = str.length();
@@ -341,17 +481,23 @@ Status DCPMMEnv::NewWritableFile(const std::string& fname,
   }
   lock_recycle_logs.unlock();
   WritableFile* file = nullptr;
+  
   Status status;
-  if (!found) {
+  if (found) {
+    // reuse the file
+    status = DCPMMWritableFile::Reuse(recycle_fname, fname, &file,
+                        options.wal_init_size, options.wal_size_addition);
+    if(!status.ok()){
+      EnvWrapper::DeleteFile(recycle_fname);
+    }
+  }
+
+  if (!found || !status.ok()) {
     // create it
     status = DCPMMWritableFile::Create(fname, &file, options.wal_init_size,
                                         options.wal_size_addition);
   }
-  else {
-    // reuse the file
-    status = DCPMMWritableFile::Reuse(recycle_fname, fname, &file,
-                        options.wal_init_size, options.wal_size_addition);
-  }
+
   if(status.ok()) {
     result->reset(file);
   }
@@ -394,6 +540,7 @@ Status DCPMMEnv::NewSequentialFile(const std::string& fname,
 }
 
 Env* NewDCPMMEnv(const DCPMMEnvOptions& options, Env* base_env) {
+  std::cerr<<"new dcpmm env!"<<std::endl;
   return new DCPMMEnv(options, base_env ? base_env : rocksdb::Env::Default());
 }
 

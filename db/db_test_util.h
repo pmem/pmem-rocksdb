@@ -8,12 +8,9 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #pragma once
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS
-#endif
 
 #include <fcntl.h>
-#include <inttypes.h>
+#include <cinttypes>
 
 #include <algorithm>
 #include <map>
@@ -24,9 +21,10 @@
 #include <utility>
 #include <vector>
 
-#include "db/db_impl.h"
+#include "db/db_impl/db_impl.h"
 #include "db/dbformat.h"
 #include "env/mock_env.h"
+#include "file/filename.h"
 #include "memtable/hash_linklist_rep.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/compaction_filter.h"
@@ -40,22 +38,21 @@
 #include "rocksdb/statistics.h"
 #include "rocksdb/table.h"
 #include "rocksdb/utilities/checkpoint.h"
-#include "table/block_based_table_factory.h"
+#include "table/block_based/block_based_table_factory.h"
 #include "table/mock_table.h"
-#include "table/plain_table_factory.h"
+#include "table/plain/plain_table_factory.h"
 #include "table/scoped_arena_iterator.h"
+#include "test_util/mock_time_env.h"
 #include "util/compression.h"
-#include "util/filename.h"
-#include "util/mock_time_env.h"
 #include "util/mutexlock.h"
 
+#include "test_util/sync_point.h"
+#include "test_util/testharness.h"
+#include "test_util/testutil.h"
 #include "util/string_util.h"
-#include "util/sync_point.h"
-#include "util/testharness.h"
-#include "util/testutil.h"
 #include "utilities/merge_operators.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 namespace anon {
 class AtomicCounter {
@@ -136,6 +133,11 @@ class SpecialMemTableRep : public MemTableRep {
   // Insert key into the list.
   // REQUIRES: nothing that compares equal to key is currently in the list.
   virtual void Insert(KeyHandle handle) override {
+    num_entries_++;
+    memtable_->Insert(handle);
+  }
+
+  void InsertConcurrently(KeyHandle handle) override {
     num_entries_++;
     memtable_->Insert(handle);
   }
@@ -500,10 +502,14 @@ class SpecialEnv : public EnvWrapper {
 
   virtual Status GetCurrentTime(int64_t* unix_time) override {
     Status s;
-    if (!time_elapse_only_sleep_) {
+    if (time_elapse_only_sleep_) {
+      *unix_time = maybe_starting_time_;
+    } else {
       s = target()->GetCurrentTime(unix_time);
     }
     if (s.ok()) {
+      // FIXME: addon_time_ sometimes used to mean seconds (here) and
+      // sometimes microseconds
       *unix_time += addon_time_.load();
     }
     return s;
@@ -528,6 +534,20 @@ class SpecialEnv : public EnvWrapper {
     delete_count_.fetch_add(1);
     return target()->DeleteFile(fname);
   }
+
+  void SetTimeElapseOnlySleep(Options* options) {
+    time_elapse_only_sleep_ = true;
+    no_slowdown_ = true;
+    // Need to disable stats dumping and persisting which also use
+    // RepeatableThread, which uses InstrumentedCondVar::TimedWaitInternal.
+    // With time_elapse_only_sleep_, this can hang on some platforms.
+    // TODO: why? investigate/fix
+    options->stats_dump_period_sec = 0;
+    options->stats_persist_period_sec = 0;
+  }
+
+  // Something to return when mocking current time
+  const int64_t maybe_starting_time_;
 
   Random rnd_;
   port::Mutex rnd_mutex_;  // Lock to pretect rnd_
@@ -645,6 +665,72 @@ class TestPutOperator : public MergeOperator {
   virtual const char* Name() const override { return "TestPutOperator"; }
 };
 
+// A wrapper around Cache that can easily be extended with instrumentation,
+// etc.
+class CacheWrapper : public Cache {
+ public:
+  explicit CacheWrapper(std::shared_ptr<Cache> target)
+      : target_(std::move(target)) {}
+
+  const char* Name() const override { return target_->Name(); }
+
+  Status Insert(const Slice& key, void* value, size_t charge,
+                void (*deleter)(const Slice& key, void* value),
+                Handle** handle = nullptr,
+                Priority priority = Priority::LOW) override {
+    return target_->Insert(key, value, charge, deleter, handle, priority);
+  }
+
+  Handle* Lookup(const Slice& key, Statistics* stats = nullptr) override {
+    return target_->Lookup(key, stats);
+  }
+
+  bool Ref(Handle* handle) override { return target_->Ref(handle); }
+
+  bool Release(Handle* handle, bool force_erase = false) override {
+    return target_->Release(handle, force_erase);
+  }
+
+  void* Value(Handle* handle) override { return target_->Value(handle); }
+
+  void Erase(const Slice& key) override { target_->Erase(key); }
+  uint64_t NewId() override { return target_->NewId(); }
+
+  void SetCapacity(size_t capacity) override { target_->SetCapacity(capacity); }
+
+  void SetStrictCapacityLimit(bool strict_capacity_limit) override {
+    target_->SetStrictCapacityLimit(strict_capacity_limit);
+  }
+
+  bool HasStrictCapacityLimit() const override {
+    return target_->HasStrictCapacityLimit();
+  }
+
+  size_t GetCapacity() const override { return target_->GetCapacity(); }
+
+  size_t GetUsage() const override { return target_->GetUsage(); }
+
+  size_t GetUsage(Handle* handle) const override {
+    return target_->GetUsage(handle);
+  }
+
+  size_t GetPinnedUsage() const override { return target_->GetPinnedUsage(); }
+
+  size_t GetCharge(Handle* handle) const override {
+    return target_->GetCharge(handle);
+  }
+
+  void ApplyToAllCacheEntries(void (*callback)(void*, size_t),
+                              bool thread_safe) override {
+    target_->ApplyToAllCacheEntries(callback, thread_safe);
+  }
+
+  void EraseUnRefEntries() override { target_->EraseUnRefEntries(); }
+
+ protected:
+  std::shared_ptr<Cache> target_;
+};
+
 class DBTestBase : public testing::Test {
  public:
   // Sequence of option configurations to try
@@ -688,6 +774,7 @@ class DBTestBase : public testing::Test {
     kPartitionedFilterWithNewTableReaderForCompactions,
     kUniversalSubcompactions,
     kxxHash64Checksum,
+    kUnorderedWrite,
     // This must be the last line
     kEnd,
   };
@@ -699,6 +786,7 @@ class DBTestBase : public testing::Test {
   MockEnv* mem_env_;
   Env* encrypted_env_;
   SpecialEnv* env_;
+  std::shared_ptr<Env> env_guard_;
   DB* db_;
   std::vector<ColumnFamilyHandle*> handles_;
 
@@ -846,7 +934,8 @@ class DBTestBase : public testing::Test {
 
   std::vector<std::string> MultiGet(std::vector<int> cfs,
                                     const std::vector<std::string>& k,
-                                    const Snapshot* snapshot = nullptr);
+                                    const Snapshot* snapshot,
+                                    const bool batched);
 
   std::vector<std::string> MultiGet(const std::vector<std::string>& k,
                                     const Snapshot* snapshot = nullptr);
@@ -854,6 +943,8 @@ class DBTestBase : public testing::Test {
   uint64_t GetNumSnapshots();
 
   uint64_t GetTimeOldestSnapshots();
+
+  uint64_t GetSequenceOldestSnapshots();
 
   // Return a string that contains all key,value pairs in order,
   // formatted like "(k1->v1)(k2->v2)".
@@ -983,6 +1074,11 @@ class DBTestBase : public testing::Test {
   uint64_t TestGetTickerCount(const Options& options, Tickers ticker_type) {
     return options.statistics->getTickerCount(ticker_type);
   }
+
+  uint64_t TestGetAndResetTickerCount(const Options& options,
+                                      Tickers ticker_type) {
+    return options.statistics->getAndResetTickerCount(ticker_type);
+  }
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

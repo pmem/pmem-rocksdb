@@ -14,14 +14,15 @@
 #include "rocksdb/slice.h"
 #include "rocksdb/types.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // A helper class useful for DBImpl::Get()
 class LookupKey {
  public:
   // Initialize *this for looking up user_key at a snapshot with
   // the specified sequence number.
-  LookupKey(const Slice& _user_key, SequenceNumber sequence);
+  LookupKey(const Slice& _user_key, SequenceNumber sequence,
+            const Slice* ts = nullptr);
 
   ~LookupKey();
 
@@ -62,4 +63,4 @@ inline LookupKey::~LookupKey() {
   if (start_ != space_) delete[] start_;
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

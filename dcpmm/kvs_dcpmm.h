@@ -9,7 +9,7 @@
 
 #pragma once
 
-#ifdef KVS_ON_DCPMM
+#ifdef ON_DCPMM
 #include <functional>
 #include <libpmemobj.h>
 
@@ -50,11 +50,11 @@ extern bool KVSEnabled();
 
 // Encode value to value reference.
 extern bool KVSEncodeValue(const Slice& value, bool compress,
-                           struct KVSRef* ref, struct pobj_action** pact);
+                           struct KVSRef* ref);
 
 // Get the value content from value reference and call the add function
 // to insert it into SST files.
-extern void KVSDumpFromValueRef(const char* input,
+extern Slice KVSDumpFromValueRef(const Slice& input,
                                 std::function<void(const Slice& value)> add);
 
 // Get the value content for value reference, decompress it if needed.

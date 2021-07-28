@@ -6,13 +6,13 @@
 #ifndef ROCKSDB_LITE
 #include <string>
 
-#include "db/db_impl.h"
+#include "db/db_impl/db_impl.h"
 #include "db/db_test_util.h"
 #include "rocksdb/options.h"
 #include "rocksdb/table.h"
-#include "util/testharness.h"
+#include "test_util/testharness.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 class OptionsFileTest : public testing::Test {
  public:
   OptionsFileTest() : dbname_(test::PerThreadDBPath("options_file_test")) {}
@@ -98,7 +98,7 @@ TEST_F(OptionsFileTest, OptionsFileName) {
   ASSERT_EQ(type, kTempFile);
   ASSERT_EQ(number, kTempOptionsFileNum);
 }
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
 #if !(defined NDEBUG) || !defined(OS_WIN)

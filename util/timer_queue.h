@@ -32,7 +32,7 @@
 #include <vector>
 
 #include "port/port.h"
-#include "util/sync_point.h"
+#include "test_util/sync_point.h"
 
 // Allows execution of handlers at a specified time in the future
 // Guarantees:
@@ -225,6 +225,6 @@ class TimerQueue {
    public:
     std::vector<WorkItem>& getContainer() { return this->c; }
   } m_items;
-  rocksdb::port::Thread m_th;
+  ROCKSDB_NAMESPACE::port::Thread m_th;
   bool closed_ = false;
 };

@@ -5,17 +5,13 @@
 //
 #include "monitoring/statistics.h"
 
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS
-#endif
-
-#include <inttypes.h>
-#include "rocksdb/statistics.h"
-#include "port/likely.h"
 #include <algorithm>
+#include <cinttypes>
 #include <cstdio>
+#include "port/likely.h"
+#include "rocksdb/statistics.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // The order of items listed in  Tickers should be the same as
 // the order listed in TickersNameMap
@@ -166,6 +162,7 @@ const std::vector<std::pair<Tickers, std::string>> TickersNameMap = {
      "rocksdb.txn.overhead.mutex.old.commit.map"},
     {TXN_DUPLICATE_KEY_OVERHEAD, "rocksdb.txn.overhead.duplicate.key"},
     {TXN_SNAPSHOT_MUTEX_OVERHEAD, "rocksdb.txn.overhead.mutex.snapshot"},
+    {TXN_GET_TRY_AGAIN, "rocksdb.txn.get.tryagain"},
     {NUMBER_MULTIGET_KEYS_FOUND, "rocksdb.number.multiget.keys.found"},
     {NO_ITERATOR_CREATED, "rocksdb.num.iterator.created"},
     {NO_ITERATOR_DELETED, "rocksdb.num.iterator.deleted"},
@@ -179,6 +176,16 @@ const std::vector<std::pair<Tickers, std::string>> TickersNameMap = {
      "rocksdb.block.cache.compression.dict.bytes.insert"},
     {BLOCK_CACHE_COMPRESSION_DICT_BYTES_EVICT,
      "rocksdb.block.cache.compression.dict.bytes.evict"},
+    {BLOCK_CACHE_ADD_REDUNDANT, "rocksdb.block.cache.add.redundant"},
+    {BLOCK_CACHE_INDEX_ADD_REDUNDANT,
+     "rocksdb.block.cache.index.add.redundant"},
+    {BLOCK_CACHE_FILTER_ADD_REDUNDANT,
+     "rocksdb.block.cache.filter.add.redundant"},
+    {BLOCK_CACHE_DATA_ADD_REDUNDANT, "rocksdb.block.cache.data.add.redundant"},
+    {BLOCK_CACHE_COMPRESSION_DICT_ADD_REDUNDANT,
+     "rocksdb.block.cache.compression.dict.add.redundant"},
+    {FILES_MARKED_TRASH, "rocksdb.files.marked.trash"},
+    {FILES_DELETED_IMMEDIATELY, "rocksdb.files.deleted.immediately"},
 };
 
 const std::vector<std::pair<Histograms, std::string>> HistogramsNameMap = {
@@ -406,4 +413,4 @@ bool StatisticsImpl::HistEnabledForType(uint32_t type) const {
   return type < HISTOGRAM_ENUM_MAX;
 }
 
-} // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

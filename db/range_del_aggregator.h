@@ -13,21 +13,21 @@
 #include <string>
 #include <vector>
 
-#include "db/compaction_iteration_stats.h"
+#include "db/compaction/compaction_iteration_stats.h"
 #include "db/dbformat.h"
 #include "db/pinned_iterators_manager.h"
 #include "db/range_del_aggregator.h"
 #include "db/range_tombstone_fragmenter.h"
 #include "db/version_edit.h"
-#include "include/rocksdb/comparator.h"
-#include "include/rocksdb/types.h"
+#include "rocksdb/comparator.h"
+#include "rocksdb/types.h"
 #include "table/internal_iterator.h"
 #include "table/scoped_arena_iterator.h"
 #include "table/table_builder.h"
 #include "util/heap.h"
 #include "util/kv_map.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class TruncatedRangeDelIterator {
  public:
@@ -320,8 +320,10 @@ class RangeDelAggregator {
                       RangeDelPositioningMode mode);
 
     void Invalidate() {
-      InvalidateForwardIter();
-      InvalidateReverseIter();
+      if (!IsEmpty()) {
+        InvalidateForwardIter();
+        InvalidateReverseIter();
+      }
     }
 
     bool IsRangeOverlapped(const Slice& start, const Slice& end);
@@ -436,4 +438,4 @@ class CompactionRangeDelAggregator : public RangeDelAggregator {
   const std::vector<SequenceNumber>* snapshots_;
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

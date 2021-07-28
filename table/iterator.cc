@@ -8,11 +8,11 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include "rocksdb/iterator.h"
+#include "memory/arena.h"
 #include "table/internal_iterator.h"
 #include "table/iterator_wrapper.h"
-#include "util/arena.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 Cleanable::Cleanable() {
   cleanup_.function = nullptr;
@@ -167,7 +167,7 @@ template <class TValue>
 InternalIteratorBase<TValue>* NewErrorInternalIterator(const Status& status) {
   return new EmptyInternalIterator<TValue>(status);
 }
-template InternalIteratorBase<BlockHandle>* NewErrorInternalIterator(
+template InternalIteratorBase<IndexValue>* NewErrorInternalIterator(
     const Status& status);
 template InternalIteratorBase<Slice>* NewErrorInternalIterator(
     const Status& status);
@@ -182,7 +182,7 @@ InternalIteratorBase<TValue>* NewErrorInternalIterator(const Status& status,
     return new (mem) EmptyInternalIterator<TValue>(status);
   }
 }
-template InternalIteratorBase<BlockHandle>* NewErrorInternalIterator(
+template InternalIteratorBase<IndexValue>* NewErrorInternalIterator(
     const Status& status, Arena* arena);
 template InternalIteratorBase<Slice>* NewErrorInternalIterator(
     const Status& status, Arena* arena);
@@ -191,7 +191,7 @@ template <class TValue>
 InternalIteratorBase<TValue>* NewEmptyInternalIterator() {
   return new EmptyInternalIterator<TValue>(Status::OK());
 }
-template InternalIteratorBase<BlockHandle>* NewEmptyInternalIterator();
+template InternalIteratorBase<IndexValue>* NewEmptyInternalIterator();
 template InternalIteratorBase<Slice>* NewEmptyInternalIterator();
 
 template <class TValue>
@@ -203,8 +203,8 @@ InternalIteratorBase<TValue>* NewEmptyInternalIterator(Arena* arena) {
     return new (mem) EmptyInternalIterator<TValue>(Status::OK());
   }
 }
-template InternalIteratorBase<BlockHandle>* NewEmptyInternalIterator(
+template InternalIteratorBase<IndexValue>* NewEmptyInternalIterator(
     Arena* arena);
 template InternalIteratorBase<Slice>* NewEmptyInternalIterator(Arena* arena);
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

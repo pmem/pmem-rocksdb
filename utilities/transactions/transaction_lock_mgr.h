@@ -6,7 +6,6 @@
 #pragma once
 #ifndef ROCKSDB_LITE
 
-#include <chrono>
 #include <string>
 #include <unordered_map>
 #include <memory>
@@ -20,7 +19,7 @@
 #include "util/thread_local.h"
 #include "utilities/transactions/pessimistic_transaction.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class ColumnFamilyHandle;
 struct LockInfo;
@@ -57,6 +56,9 @@ class TransactionLockMgr {
   TransactionLockMgr(TransactionDB* txn_db, size_t default_num_stripes,
                      int64_t max_num_locks, uint32_t max_num_deadlocks,
                      std::shared_ptr<TransactionDBMutexFactory> factory);
+  // No copying allowed
+  TransactionLockMgr(const TransactionLockMgr&) = delete;
+  void operator=(const TransactionLockMgr&) = delete;
 
   ~TransactionLockMgr();
 
@@ -149,11 +151,7 @@ class TransactionLockMgr {
                         const autovector<TransactionID>& wait_ids);
   void DecrementWaitersImpl(const PessimisticTransaction* txn,
                             const autovector<TransactionID>& wait_ids);
-
-  // No copying allowed
-  TransactionLockMgr(const TransactionLockMgr&);
-  void operator=(const TransactionLockMgr&);
 };
 
-}  //  namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 #endif  // ROCKSDB_LITE

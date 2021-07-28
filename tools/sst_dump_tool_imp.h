@@ -10,15 +10,16 @@
 #include <memory>
 #include <string>
 #include "db/dbformat.h"
+#include "file/writable_file_writer.h"
 #include "options/cf_options.h"
-#include "util/file_reader_writer.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class SstFileDumper {
  public:
   explicit SstFileDumper(const Options& options, const std::string& file_name,
-                         bool verify_checksum, bool output_hex);
+                         size_t readahead_size, bool verify_checksum,
+                         bool output_hex, bool decode_blob_index);
 
   Status ReadSequential(bool print_kv, uint64_t read_num, bool has_from,
                         const std::string& from_key, bool has_to,
@@ -37,16 +38,25 @@ class SstFileDumper {
   int ShowAllCompressionSizes(
       size_t block_size,
       const std::vector<std::pair<CompressionType, const char*>>&
-          compression_types);
+        compression_types,
+      int32_t compress_level_from,
+      int32_t compress_level_to);
+
+  int ShowCompressionSize(
+      size_t block_size,
+      CompressionType compress_type,
+      const CompressionOptions& compress_opt);
 
  private:
   // Get the TableReader implementation for the sst file
   Status GetTableReader(const std::string& file_path);
   Status ReadTableProperties(uint64_t table_magic_number,
-                             RandomAccessFileReader* file, uint64_t file_size);
+                             RandomAccessFileReader* file, uint64_t file_size,
+                             FilePrefetchBuffer* prefetch_buffer);
 
   uint64_t CalculateCompressedTableSize(const TableBuilderOptions& tb_options,
-                                        size_t block_size);
+                                        size_t block_size,
+                                        uint64_t* num_data_blocks);
 
   Status SetTableOptionsByMagicNumber(uint64_t table_magic_number);
   Status SetOldTableOptions();
@@ -61,8 +71,8 @@ class SstFileDumper {
 
   std::string file_name_;
   uint64_t read_num_;
-  bool verify_checksum_;
   bool output_hex_;
+  bool decode_blob_index_;
   EnvOptions soptions_;
 
   // options_ and internal_comparator_ will also be used in
@@ -75,10 +85,11 @@ class SstFileDumper {
 
   const ImmutableCFOptions ioptions_;
   const MutableCFOptions moptions_;
+  ReadOptions read_options_;
   InternalKeyComparator internal_comparator_;
   std::unique_ptr<TableProperties> table_properties_;
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 #endif  // ROCKSDB_LITE

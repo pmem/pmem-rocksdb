@@ -8,11 +8,11 @@
 
 #include "monitoring/thread_status_updater.h"
 #include "rocksdb/db.h"
-#include "util/testharness.h"
+#include "test_util/testharness.h"
 
 #ifdef ROCKSDB_USING_THREAD_STATUS
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class SimulatedBackgroundTask {
  public:
@@ -335,7 +335,7 @@ TEST_F(ThreadListTest, SimpleEventTest) {
                        ThreadStatus::NUM_OP_TYPES);
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);

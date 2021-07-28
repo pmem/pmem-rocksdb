@@ -6,13 +6,14 @@
 #include "table/mock_table.h"
 
 #include "db/dbformat.h"
+#include "env/composite_env_wrapper.h"
+#include "file/random_access_file_reader.h"
 #include "port/port.h"
 #include "rocksdb/table_properties.h"
 #include "table/get_context.h"
 #include "util/coding.h"
-#include "util/file_reader_writer.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 namespace mock {
 
 namespace {
@@ -22,19 +23,14 @@ const InternalKeyComparator icmp_(BytewiseComparator());
 }  // namespace
 
 stl_wrappers::KVMap MakeMockFile(
-    std::vector<std::pair<const std::string, std::string>> l) {
-  return stl_wrappers::KVMap(l.begin(), l.end(),
-                             stl_wrappers::LessOfComparator(&icmp_));
-}
-
-stl_wrappers::KVMap MakeMockFile(
     std::initializer_list<std::pair<const std::string, std::string>> l) {
   return stl_wrappers::KVMap(l, stl_wrappers::LessOfComparator(&icmp_));
 }
 
 InternalIterator* MockTableReader::NewIterator(
     const ReadOptions&, const SliceTransform* /* prefix_extractor */,
-    Arena* /*arena*/, bool /*skip_filters*/, bool /*for_compaction*/) {
+    Arena* /*arena*/, bool /*skip_filters*/, TableReaderCaller /*caller*/,
+    size_t /*compaction_readahead_size*/, bool /* allow_unprepared_value */) {
   return new MockTableIterator(table_);
 }
 
@@ -99,7 +95,8 @@ Status MockTableFactory::CreateMockTable(Env* env, const std::string& fname,
     return s;
   }
 
-  WritableFileWriter file_writer(std::move(file), fname, EnvOptions());
+  WritableFileWriter file_writer(NewLegacyWritableFileWrapper(std::move(file)),
+                                 fname, EnvOptions());
 
   uint32_t id = GetAndWriteNextID(&file_writer);
   file_system_.files.insert({id, std::move(file_contents)});
@@ -117,7 +114,7 @@ uint32_t MockTableFactory::GetAndWriteNextID(WritableFileWriter* file) const {
 uint32_t MockTableFactory::GetIDFromFile(RandomAccessFileReader* file) const {
   char buf[4];
   Slice result;
-  file->Read(0, 4, &result, buf);
+  file->Read(IOOptions(), 0, 4, &result, buf, nullptr);
   assert(result.size() == 4);
   return DecodeFixed32(buf);
 }
@@ -143,17 +140,9 @@ void MockTableFactory::AssertLatestFile(
       ParseInternalKey(Slice(key), &ikey);
       std::cout << ikey.DebugString(false) << " -> " << value << std::endl;
     }
-    std::cout << "Expected:" << std::endl;
-    for (const auto& kv : file_contents) {
-      ParsedInternalKey ikey;
-      std::string key, value;
-      std::tie(key, value) = kv;
-      ParseInternalKey(Slice(key), &ikey);
-      std::cout << ikey.DebugString(false) << " -> " << value << std::endl;
-    }
     FAIL();
   }
 }
 
 }  // namespace mock
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

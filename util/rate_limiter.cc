@@ -11,10 +11,10 @@
 #include "monitoring/statistics.h"
 #include "port/port.h"
 #include "rocksdb/env.h"
+#include "test_util/sync_point.h"
 #include "util/aligned_buffer.h"
-#include "util/sync_point.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 size_t RateLimiter::RequestToken(size_t bytes, size_t alignment,
                                  Env::IOPriority io_priority, Statistics* stats,
@@ -336,4 +336,4 @@ RateLimiter* NewGenericRateLimiter(
                                 mode, Env::Default(), auto_tuned);
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

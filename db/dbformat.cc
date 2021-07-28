@@ -8,18 +8,14 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 #include "db/dbformat.h"
 
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS
-#endif
-
-#include <inttypes.h>
 #include <stdio.h>
+#include <cinttypes>
 #include "monitoring/perf_context_imp.h"
 #include "port/port.h"
 #include "util/coding.h"
 #include "util/string_util.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // kValueTypeForSeek defines the ValueType that should be passed when
 // constructing a ParsedInternalKey object for seeking to a particular
@@ -27,7 +23,7 @@ namespace rocksdb {
 // and the value type is embedded as the low 8 bits in the sequence
 // number in internal keys, we need to use the highest-numbered
 // ValueType, not the lowest).
-const ValueType kValueTypeForSeek = kTypeBlobIndex;
+const ValueType kValueTypeForSeek = kTypeDeletionWithTimestamp;
 const ValueType kValueTypeForSeekForPrev = kTypeDeletion;
 
 uint64_t PackSequenceAndType(uint64_t seq, ValueType t) {
@@ -76,6 +72,15 @@ void UnPackSequenceAndType(uint64_t packed, uint64_t* seq, ValueType* t) {
 
 void AppendInternalKey(std::string* result, const ParsedInternalKey& key) {
   result->append(key.user_key.data(), key.user_key.size());
+  PutFixed64(result, PackSequenceAndType(key.sequence, key.type));
+}
+
+void AppendInternalKeyWithDifferentTimestamp(std::string* result,
+                                             const ParsedInternalKey& key,
+                                             const Slice& ts) {
+  assert(key.user_key.size() >= ts.size());
+  result->append(key.user_key.data(), key.user_key.size() - ts.size());
+  result->append(ts.data(), ts.size());
   PutFixed64(result, PackSequenceAndType(key.sequence, key.type));
 }
 
@@ -163,9 +168,11 @@ void InternalKeyComparator::FindShortSuccessor(std::string* key) const {
   }
 }
 
-LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s) {
+LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s,
+                     const Slice* ts) {
   size_t usize = _user_key.size();
-  size_t needed = usize + 13;  // A conservative estimate
+  size_t ts_sz = (nullptr == ts) ? 0 : ts->size();
+  size_t needed = usize + ts_sz + 13;  // A conservative estimate
   char* dst;
   if (needed <= sizeof(space_)) {
     dst = space_;
@@ -174,10 +181,14 @@ LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s) {
   }
   start_ = dst;
   // NOTE: We don't support users keys of more than 2GB :)
-  dst = EncodeVarint32(dst, static_cast<uint32_t>(usize + 8));
+  dst = EncodeVarint32(dst, static_cast<uint32_t>(usize + ts_sz + 8));
   kstart_ = dst;
   memcpy(dst, _user_key.data(), usize);
   dst += usize;
+  if (nullptr != ts) {
+    memcpy(dst, ts->data(), ts_sz);
+    dst += ts_sz;
+  }
   EncodeFixed64(dst, PackSequenceAndType(s, kValueTypeForSeek));
   dst += 8;
   end_ = dst;
@@ -192,4 +203,4 @@ void IterKey::EnlargeBuffer(size_t key_size) {
   buf_ = new char[key_size];
   buf_size_ = key_size;
 }
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

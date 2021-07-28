@@ -41,7 +41,7 @@
 #include <memory>
 #include <stdexcept>
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class Arena;
 class Allocator;
@@ -59,7 +59,7 @@ class MemTableRep {
   // concatenated with values.
   class KeyComparator {
    public:
-    typedef rocksdb::Slice DecodedType;
+    typedef ROCKSDB_NAMESPACE::Slice DecodedType;
 
     virtual DecodedType decode_key(const char* key) const {
       // The format of key is frozen and can be terated as a part of the API
@@ -117,6 +117,28 @@ class MemTableRep {
   // the <key, seq> already exists.
   virtual bool InsertKeyWithHint(KeyHandle handle, void** hint) {
     InsertWithHint(handle, hint);
+    return true;
+  }
+
+  // Same as ::InsertWithHint, but allow concurrnet write
+  //
+  // If hint points to nullptr, a new hint will be allocated on heap, otherwise
+  // the hint will be updated to reflect the last insert location. The hint is
+  // owned by the caller and it is the caller's responsibility to delete the
+  // hint later.
+  //
+  // Currently only skip-list based memtable implement the interface. Other
+  // implementations will fallback to InsertConcurrently() by default.
+  virtual void InsertWithHintConcurrently(KeyHandle handle, void** /*hint*/) {
+    // Ignore the hint by default.
+    InsertConcurrently(handle);
+  }
+
+  // Same as ::InsertWithHintConcurrently
+  // Returns false if MemTableRepFactory::CanHandleDuplicatedKey() is true and
+  // the <key, seq> already exists.
+  virtual bool InsertKeyWithHintConcurrently(KeyHandle handle, void** hint) {
+    InsertWithHintConcurrently(handle, hint);
     return true;
   }
 
@@ -360,4 +382,4 @@ extern MemTableRepFactory* NewHashLinkListRepFactory(
     uint32_t threshold_use_skiplist = 256);
 
 #endif  // ROCKSDB_LITE
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

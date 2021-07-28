@@ -5,6 +5,7 @@
 
 #pragma once
 #include <algorithm>
+#include <array>
 #include <string>
 #include "db/lookup_key.h"
 #include "db/merge_context.h"
@@ -12,8 +13,9 @@
 #include "rocksdb/statistics.h"
 #include "rocksdb/types.h"
 #include "util/autovector.h"
+#include "util/math.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 class GetContext;
 
 struct KeyContext {
@@ -21,24 +23,27 @@ struct KeyContext {
   LookupKey* lkey;
   Slice ukey;
   Slice ikey;
+  ColumnFamilyHandle* column_family;
   Status* s;
   MergeContext merge_context;
   SequenceNumber max_covering_tombstone_seq;
   bool key_exists;
-  SequenceNumber seq;
   void* cb_arg;
   PinnableSlice* value;
+  std::string* timestamp;
   GetContext* get_context;
 
-  KeyContext(const Slice& user_key, PinnableSlice* val, Status* stat)
+  KeyContext(ColumnFamilyHandle* col_family, const Slice& user_key,
+             PinnableSlice* val, std::string* ts, Status* stat)
       : key(&user_key),
         lkey(nullptr),
+        column_family(col_family),
         s(stat),
         max_covering_tombstone_seq(0),
         key_exists(false),
-        seq(0),
         cb_arg(nullptr),
         value(val),
+        timestamp(ts),
         get_context(nullptr) {}
 
   KeyContext() = default;
@@ -87,14 +92,13 @@ class MultiGetContext {
   // htat need to be performed
   static const int MAX_BATCH_SIZE = 32;
 
-  MultiGetContext(KeyContext** sorted_keys, size_t num_keys,
-                  SequenceNumber snapshot)
-      : sorted_keys_(sorted_keys),
-        num_keys_(num_keys),
+  MultiGetContext(autovector<KeyContext*, MAX_BATCH_SIZE>* sorted_keys,
+                  size_t begin, size_t num_keys, SequenceNumber snapshot,
+                  const ReadOptions& read_opts)
+      : num_keys_(num_keys),
         value_mask_(0),
+        value_size_(0),
         lookup_key_ptr_(reinterpret_cast<LookupKey*>(lookup_key_stack_buf)) {
-    int index = 0;
-
     if (num_keys > MAX_LOOKUP_KEYS_ON_STACK) {
       lookup_key_heap_buf.reset(new char[sizeof(LookupKey) * num_keys]);
       lookup_key_ptr_ = reinterpret_cast<LookupKey*>(
@@ -102,11 +106,12 @@ class MultiGetContext {
     }
 
     for (size_t iter = 0; iter != num_keys_; ++iter) {
-      sorted_keys_[iter]->lkey = new (&lookup_key_ptr_[index])
-          LookupKey(*sorted_keys_[iter]->key, snapshot);
+      // autovector may not be contiguous storage, so make a copy
+      sorted_keys_[iter] = (*sorted_keys)[begin + iter];
+      sorted_keys_[iter]->lkey = new (&lookup_key_ptr_[iter])
+          LookupKey(*sorted_keys_[iter]->key, snapshot, read_opts.timestamp);
       sorted_keys_[iter]->ukey = sorted_keys_[iter]->lkey->user_key();
       sorted_keys_[iter]->ikey = sorted_keys_[iter]->lkey->internal_key();
-      index++;
     }
   }
 
@@ -120,9 +125,10 @@ class MultiGetContext {
   static const int MAX_LOOKUP_KEYS_ON_STACK = 16;
   alignas(alignof(LookupKey))
     char lookup_key_stack_buf[sizeof(LookupKey) * MAX_LOOKUP_KEYS_ON_STACK];
-  KeyContext** sorted_keys_;
+  std::array<KeyContext*, MAX_BATCH_SIZE> sorted_keys_;
   size_t num_keys_;
   uint64_t value_mask_;
+  uint64_t value_size_;
   std::unique_ptr<char[]> lookup_key_heap_buf;
   LookupKey* lookup_key_ptr_;
 
@@ -154,7 +160,7 @@ class MultiGetContext {
       Iterator(const Range* range, size_t idx)
           : range_(range), ctx_(range->ctx_), index_(idx) {
         while (index_ < range_->end_ &&
-               (1ull << index_) &
+               (uint64_t{1} << index_) &
                    (range_->ctx_->value_mask_ | range_->skip_mask_))
           index_++;
       }
@@ -164,7 +170,7 @@ class MultiGetContext {
 
       Iterator& operator++() {
         while (++index_ < range_->end_ &&
-               (1ull << index_) &
+               (uint64_t{1} << index_) &
                    (range_->ctx_->value_mask_ | range_->skip_mask_))
           ;
         return *this;
@@ -206,6 +212,8 @@ class MultiGetContext {
       start_ = first.index_;
       end_ = last.index_;
       skip_mask_ = mget_range.skip_mask_;
+      assert(start_ < 64);
+      assert(end_ < 64);
     }
 
     Range() = default;
@@ -214,22 +222,32 @@ class MultiGetContext {
 
     Iterator end() const { return Iterator(this, end_); }
 
-    bool empty() {
-      return (((1ull << end_) - 1) & ~((1ull << start_) - 1) &
-              ~(ctx_->value_mask_ | skip_mask_)) == 0;
-    }
+    bool empty() const { return RemainingMask() == 0; }
 
-    void SkipKey(const Iterator& iter) { skip_mask_ |= 1ull << iter.index_; }
+    void SkipKey(const Iterator& iter) {
+      skip_mask_ |= uint64_t{1} << iter.index_;
+    }
 
     // Update the value_mask_ in MultiGetContext so its
     // immediately reflected in all the Range Iterators
     void MarkKeyDone(Iterator& iter) {
-      ctx_->value_mask_ |= (1ull << iter.index_);
+      ctx_->value_mask_ |= (uint64_t{1} << iter.index_);
     }
 
-    bool CheckKeyDone(Iterator& iter) {
-      return ctx_->value_mask_ & (1ull << iter.index_);
+    bool CheckKeyDone(Iterator& iter) const {
+      return ctx_->value_mask_ & (uint64_t{1} << iter.index_);
     }
+
+    uint64_t KeysLeft() const { return BitsSetToOne(RemainingMask()); }
+
+    void AddSkipsFrom(const Range& other) {
+      assert(ctx_ == other.ctx_);
+      skip_mask_ |= other.skip_mask_;
+    }
+
+    uint64_t GetValueSize() { return ctx_->value_size_; }
+
+    void AddValueSize(uint64_t value_size) { ctx_->value_size_ += value_size; }
 
    private:
     friend MultiGetContext;
@@ -239,11 +257,18 @@ class MultiGetContext {
     uint64_t skip_mask_;
 
     Range(MultiGetContext* ctx, size_t num_keys)
-        : ctx_(ctx), start_(0), end_(num_keys), skip_mask_(0) {}
+        : ctx_(ctx), start_(0), end_(num_keys), skip_mask_(0) {
+      assert(num_keys < 64);
+    }
+
+    uint64_t RemainingMask() const {
+      return (((uint64_t{1} << end_) - 1) & ~((uint64_t{1} << start_) - 1) &
+              ~(ctx_->value_mask_ | skip_mask_));
+    }
   };
 
   // Return the initial range that encompasses all the keys in the batch
   Range GetMultiGetRange() { return Range(this, num_keys_); }
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

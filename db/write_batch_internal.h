@@ -9,18 +9,17 @@
 
 #pragma once
 #include <vector>
+#include "db/flush_scheduler.h"
+#include "db/trim_history_scheduler.h"
 #include "db/write_thread.h"
-#include "rocksdb/types.h"
-#include "rocksdb/write_batch.h"
 #include "rocksdb/db.h"
 #include "rocksdb/options.h"
+#include "rocksdb/types.h"
+#include "rocksdb/write_batch.h"
 #include "util/autovector.h"
-
-#ifdef KVS_ON_DCPMM
 #include "dcpmm/kvs_dcpmm.h"
-#endif
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class MemTable;
 class FlushScheduler;
@@ -71,22 +70,6 @@ class WriteBatchInternal {
   // WriteBatch header has an 8-byte sequence number followed by a 4-byte count.
   static const size_t kHeader = 12;
 
-#ifdef KVS_ON_DCPMM
-  // Merge the action of the write batch
-  static void DCPMMMergeActions(WriteBatch *merged_batch, WriteBatch *batch) {
-    merged_batch->act_.insert(merged_batch->act_.end(), batch->act_.begin(),
-                              batch->act_.end());
-    batch->act_.clear();
-  }
-
-  // Publish all the actions of a grouped batch
-  static void DCPMMPublishActions(const WriteBatch* batch) {
-    auto& pacts = batch->act_;
-    KVSPublish((struct pobj_action**)pacts.data(), pacts.size());
-    pacts.clear();
-  }
-#endif
-
   // WriteBatch methods with column_family_id instead of ColumnFamilyHandle*
   static Status Put(WriteBatch* batch, uint32_t column_family_id,
                     const Slice& key, const Slice& value);
@@ -133,10 +116,10 @@ class WriteBatchInternal {
   static Status InsertNoop(WriteBatch* batch);
 
   // Return the number of entries in the batch.
-  static int Count(const WriteBatch* batch);
+  static uint32_t Count(const WriteBatch* batch);
 
   // Set the count for the number of entries in the batch.
-  static void SetCount(WriteBatch* batch, int n);
+  static void SetCount(WriteBatch* batch, uint32_t n);
 
   // Return the sequence number for the start of this batch.
   static SequenceNumber Sequence(const WriteBatch* batch);
@@ -182,6 +165,7 @@ class WriteBatchInternal {
   static Status InsertInto(
       WriteThread::WriteGroup& write_group, SequenceNumber sequence,
       ColumnFamilyMemTables* memtables, FlushScheduler* flush_scheduler,
+      TrimHistoryScheduler* trim_history_scheduler,
       bool ignore_missing_column_families = false, uint64_t log_number = 0,
       DB* db = nullptr, bool concurrent_memtable_writes = false,
       bool seq_per_batch = false, bool batch_per_txn = true);
@@ -191,6 +175,7 @@ class WriteBatchInternal {
   static Status InsertInto(
       const WriteBatch* batch, ColumnFamilyMemTables* memtables,
       FlushScheduler* flush_scheduler,
+      TrimHistoryScheduler* trim_history_scheduler,
       bool ignore_missing_column_families = false, uint64_t log_number = 0,
       DB* db = nullptr, bool concurrent_memtable_writes = false,
       SequenceNumber* next_seq = nullptr, bool* has_valid_writes = nullptr,
@@ -199,11 +184,13 @@ class WriteBatchInternal {
   static Status InsertInto(WriteThread::Writer* writer, SequenceNumber sequence,
                            ColumnFamilyMemTables* memtables,
                            FlushScheduler* flush_scheduler,
+                           TrimHistoryScheduler* trim_history_scheduler,
                            bool ignore_missing_column_families = false,
                            uint64_t log_number = 0, DB* db = nullptr,
                            bool concurrent_memtable_writes = false,
                            bool seq_per_batch = false, size_t batch_cnt = 0,
-                           bool batch_per_txn = true);
+                           bool batch_per_txn = true,
+                           bool hint_per_batch = false);
 
   static Status Append(WriteBatch* dst, const WriteBatch* src,
                        const bool WAL_only = false);
@@ -211,6 +198,10 @@ class WriteBatchInternal {
   // Returns the byte size of appending a WriteBatch with ByteSize
   // leftByteSize and a WriteBatch with ByteSize rightByteSize
   static size_t AppendedByteSize(size_t leftByteSize, size_t rightByteSize);
+
+  // Iterate over [begin, end) range of a write batch
+  static Status Iterate(const WriteBatch* wb, WriteBatch::Handler* handler,
+                        size_t begin, size_t end);
 
   // This write batch includes the latest state that should be persisted. Such
   // state meant to be used only during recovery.
@@ -257,4 +248,4 @@ class LocalSavePoint {
 #endif
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

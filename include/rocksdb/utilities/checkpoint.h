@@ -9,11 +9,15 @@
 #ifndef ROCKSDB_LITE
 
 #include <string>
+#include <vector>
 #include "rocksdb/status.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class DB;
+class ColumnFamilyHandle;
+struct LiveFileMetaData;
+struct ExportImportFilesMetaData;
 
 class Checkpoint {
  public:
@@ -33,11 +37,25 @@ class Checkpoint {
   // away from the default, the checkpoint may not contain up-to-date data
   // if WAL writing is not always enabled.
   // Flush will always trigger if it is 2PC.
+  // sequence_number_ptr: if it is not nullptr, the value it points to will be
+  // set to the DB's sequence number. The default value of this parameter is
+  // nullptr.
   virtual Status CreateCheckpoint(const std::string& checkpoint_dir,
-                                  uint64_t log_size_for_flush = 0);
+                                  uint64_t log_size_for_flush = 0,
+                                  uint64_t* sequence_number_ptr = nullptr);
+
+  // Exports all live SST files of a specified Column Family onto export_dir,
+  // returning SST files information in metadata.
+  // - SST files will be created as hard links when the directory specified
+  //   is in the same partition as the db directory, copied otherwise.
+  // - export_dir should not already exist and will be created by this API.
+  // - Always triggers a flush.
+  virtual Status ExportColumnFamily(ColumnFamilyHandle* handle,
+                                    const std::string& export_dir,
+                                    ExportImportFilesMetaData** metadata);
 
   virtual ~Checkpoint() {}
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 #endif  // !ROCKSDB_LITE

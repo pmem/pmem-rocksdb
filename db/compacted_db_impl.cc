@@ -5,11 +5,11 @@
 
 #ifndef ROCKSDB_LITE
 #include "db/compacted_db_impl.h"
-#include "db/db_impl.h"
+#include "db/db_impl/db_impl.h"
 #include "db/version_set.h"
 #include "table/get_context.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 extern void MarkKeyMayExist(void* arg);
 extern bool SaveValue(void* arg, const ParsedInternalKey& parsed_key,
@@ -37,7 +37,7 @@ Status CompactedDBImpl::Get(const ReadOptions& options, ColumnFamilyHandle*,
                             const Slice& key, PinnableSlice* value) {
   GetContext get_context(user_comparator_, nullptr, nullptr, nullptr,
                          GetContext::kNotFound, key, value, nullptr, nullptr,
-                         nullptr, nullptr);
+                         nullptr, true, nullptr, nullptr);
   LookupKey lkey(key, kMaxSequenceNumber);
   files_.files[FindFile(key)].fd.table_reader->Get(options, lkey.internal_key(),
                                                    &get_context, nullptr);
@@ -70,7 +70,7 @@ std::vector<Status> CompactedDBImpl::MultiGet(const ReadOptions& options,
       std::string& value = (*values)[idx];
       GetContext get_context(user_comparator_, nullptr, nullptr, nullptr,
                              GetContext::kNotFound, keys[idx], &pinnable_val,
-                             nullptr, nullptr, nullptr, nullptr);
+                             nullptr, nullptr, nullptr, true, nullptr, nullptr);
       LookupKey lkey(keys[idx], kMaxSequenceNumber);
       r->Get(options, lkey.internal_key(), &get_context, nullptr);
       value.assign(pinnable_val.data(), pinnable_val.size());
@@ -156,5 +156,5 @@ Status CompactedDBImpl::Open(const Options& options,
   return s;
 }
 
-}   // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 #endif  // ROCKSDB_LITE

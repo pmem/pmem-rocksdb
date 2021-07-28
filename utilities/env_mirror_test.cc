@@ -8,9 +8,9 @@
 
 #include "rocksdb/utilities/env_mirror.h"
 #include "env/mock_env.h"
-#include "util/testharness.h"
+#include "test_util/testharness.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class EnvMirrorTest : public testing::Test {
  public:
@@ -205,7 +205,7 @@ TEST_F(EnvMirrorTest, LargeWrite) {
   delete[] scratch;
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);

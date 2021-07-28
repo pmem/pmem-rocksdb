@@ -8,9 +8,9 @@
 #include "rocksdb/comparator.h"
 #include "rocksdb/options.h"
 #include "rocksdb/slice.h"
+#include "test_util/testharness.h"
 #include "util/random.h"
 #include "util/string_util.h"
-#include "util/testharness.h"
 #include "utilities/merge_operators.h"
 
 #ifdef GFLAGS
@@ -29,7 +29,7 @@ bool FLAGS_verbose = false;
 
 #endif
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class DBIteratorStressTest : public testing::Test {
  public:
@@ -645,7 +645,7 @@ TEST_F(DBIteratorStressTest, StressTest) {
             << "\n  mutated on the fly: " << num_recently_removed << std::endl;
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);

@@ -4,11 +4,11 @@
 //  (found in the LICENSE.Apache file in the root directory).
 //
 #include "db/error_handler.h"
-#include "db/db_impl.h"
+#include "db/db_impl/db_impl.h"
 #include "db/event_helpers.h"
-#include "util/sst_file_manager_impl.h"
+#include "file/sst_file_manager_impl.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 // Maps to help decide the severity of an error based on the
 // BackgroundErrorReason, Code, SubCode and whether db_options.paranoid_checks
@@ -51,9 +51,19 @@ std::map<std::tuple<BackgroundErrorReason, Status::Code, Status::SubCode, bool>,
                          Status::Code::kIOError, Status::SubCode::kNoSpace,
                          false),
          Status::Severity::kHardError},
+        // Errors during MANIFEST write
+        {std::make_tuple(BackgroundErrorReason::kManifestWrite,
+                         Status::Code::kIOError, Status::SubCode::kNoSpace,
+                         true),
+         Status::Severity::kHardError},
+        {std::make_tuple(BackgroundErrorReason::kManifestWrite,
+                         Status::Code::kIOError, Status::SubCode::kNoSpace,
+                         false),
+         Status::Severity::kHardError},
 };
 
-std::map<std::tuple<BackgroundErrorReason, Status::Code, bool>, Status::Severity>
+std::map<std::tuple<BackgroundErrorReason, Status::Code, bool>,
+         Status::Severity>
     DefaultErrorSeverityMap = {
         // Errors during BG compaction
         {std::make_tuple(BackgroundErrorReason::kCompaction,
@@ -75,11 +85,11 @@ std::map<std::tuple<BackgroundErrorReason, Status::Code, bool>, Status::Severity
         {std::make_tuple(BackgroundErrorReason::kFlush,
                          Status::Code::kCorruption, false),
          Status::Severity::kNoError},
-        {std::make_tuple(BackgroundErrorReason::kFlush,
-                         Status::Code::kIOError, true),
+        {std::make_tuple(BackgroundErrorReason::kFlush, Status::Code::kIOError,
+                         true),
          Status::Severity::kFatalError},
-        {std::make_tuple(BackgroundErrorReason::kFlush,
-                         Status::Code::kIOError, false),
+        {std::make_tuple(BackgroundErrorReason::kFlush, Status::Code::kIOError,
+                         false),
          Status::Severity::kNoError},
         // Errors during Write
         {std::make_tuple(BackgroundErrorReason::kWriteCallback,
@@ -94,30 +104,36 @@ std::map<std::tuple<BackgroundErrorReason, Status::Code, bool>, Status::Severity
         {std::make_tuple(BackgroundErrorReason::kWriteCallback,
                          Status::Code::kIOError, false),
          Status::Severity::kNoError},
+        {std::make_tuple(BackgroundErrorReason::kManifestWrite,
+                         Status::Code::kIOError, true),
+         Status::Severity::kFatalError},
+        {std::make_tuple(BackgroundErrorReason::kManifestWrite,
+                         Status::Code::kIOError, false),
+         Status::Severity::kFatalError},
 };
 
 std::map<std::tuple<BackgroundErrorReason, bool>, Status::Severity>
     DefaultReasonMap = {
         // Errors during BG compaction
         {std::make_tuple(BackgroundErrorReason::kCompaction, true),
-          Status::Severity::kFatalError},
+         Status::Severity::kFatalError},
         {std::make_tuple(BackgroundErrorReason::kCompaction, false),
-          Status::Severity::kNoError},
+         Status::Severity::kNoError},
         // Errors during BG flush
         {std::make_tuple(BackgroundErrorReason::kFlush, true),
-          Status::Severity::kFatalError},
+         Status::Severity::kFatalError},
         {std::make_tuple(BackgroundErrorReason::kFlush, false),
-          Status::Severity::kNoError},
+         Status::Severity::kNoError},
         // Errors during Write
         {std::make_tuple(BackgroundErrorReason::kWriteCallback, true),
-          Status::Severity::kFatalError},
+         Status::Severity::kFatalError},
         {std::make_tuple(BackgroundErrorReason::kWriteCallback, false),
-          Status::Severity::kFatalError},
+         Status::Severity::kFatalError},
         // Errors during Memtable update
         {std::make_tuple(BackgroundErrorReason::kMemTable, true),
-          Status::Severity::kFatalError},
+         Status::Severity::kFatalError},
         {std::make_tuple(BackgroundErrorReason::kMemTable, false),
-          Status::Severity::kFatalError},
+         Status::Severity::kFatalError},
 };
 
 void ErrorHandler::CancelErrorRecovery() {
@@ -166,12 +182,6 @@ Status ErrorHandler::SetBGError(const Status& bg_err, BackgroundErrorReason reas
     return Status::OK();
   }
 
-  // Check if recovery is currently in progress. If it is, we will save this
-  // error so we can check it at the end to see if recovery succeeded or not
-  if (recovery_in_prog_ && recovery_error_.ok()) {
-    recovery_error_ = bg_err;
-  }
-
   bool paranoid = db_options_.paranoid_checks;
   Status::Severity sev = Status::Severity::kFatalError;
   Status new_bg_err;
@@ -204,10 +214,15 @@ Status ErrorHandler::SetBGError(const Status& bg_err, BackgroundErrorReason reas
 
   new_bg_err = Status(bg_err, sev);
 
+  // Check if recovery is currently in progress. If it is, we will save this
+  // error so we can check it at the end to see if recovery succeeded or not
+  if (recovery_in_prog_ && recovery_error_.ok()) {
+    recovery_error_ = new_bg_err;
+  }
+
   bool auto_recovery = auto_recovery_;
   if (new_bg_err.severity() >= Status::Severity::kFatalError && auto_recovery) {
     auto_recovery = false;
-    ;
   }
 
   // Allow some error specific overrides
@@ -237,6 +252,50 @@ Status ErrorHandler::SetBGError(const Status& bg_err, BackgroundErrorReason reas
     }
   }
   return bg_error_;
+}
+
+Status ErrorHandler::SetBGError(const IOStatus& bg_io_err,
+                                BackgroundErrorReason reason) {
+  db_mutex_->AssertHeld();
+  if (bg_io_err.ok()) {
+    return Status::OK();
+  }
+  if (recovery_in_prog_ && recovery_error_.ok()) {
+    recovery_error_ = bg_io_err;
+  }
+  if (BackgroundErrorReason::kManifestWrite == reason) {
+    // Always returns ok
+    db_->DisableFileDeletionsWithLock();
+  }
+  Status new_bg_io_err = bg_io_err;
+  Status s;
+  if (bg_io_err.GetDataLoss()) {
+    // FIrst, data loss is treated as unrecoverable error. So it can directly
+    // overwrite any existing bg_error_.
+    bool auto_recovery = false;
+    Status bg_err(new_bg_io_err, Status::Severity::kUnrecoverableError);
+    bg_error_ = bg_err;
+    EventHelpers::NotifyOnBackgroundError(db_options_.listeners, reason, &s,
+                                          db_mutex_, &auto_recovery);
+    return bg_error_;
+  } else if (bg_io_err.GetRetryable()) {
+    // Second, check if the error is a retryable IO error or not. if it is
+    // retryable error and its severity is higher than bg_error_, overwrite
+    // the bg_error_ with new error.
+    // In current stage, treat retryable error as HardError. No automatic
+    // recovery.
+    bool auto_recovery = false;
+    Status bg_err(new_bg_io_err, Status::Severity::kHardError);
+    EventHelpers::NotifyOnBackgroundError(db_options_.listeners, reason, &s,
+                                          db_mutex_, &auto_recovery);
+    if (bg_err.severity() > bg_error_.severity()) {
+      bg_error_ = bg_err;
+    }
+    return bg_error_;
+  } else {
+    s = SetBGError(new_bg_io_err, reason);
+  }
+  return s;
 }
 
 Status ErrorHandler::OverrideNoSpaceError(Status bg_error,
@@ -342,4 +401,4 @@ Status ErrorHandler::RecoverFromBGError(bool is_manual) {
   return bg_error_;
 #endif
 }
-}
+}  // namespace ROCKSDB_NAMESPACE

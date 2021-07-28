@@ -10,7 +10,7 @@
 #include "db/db_test_util.h"
 #include "port/stack_trace.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 static int cfilter_count = 0;
 static int cfilter_skips = 0;
@@ -47,8 +47,7 @@ class DBTestCompactionFilterWithCompactParam
 
 #ifndef ROCKSDB_VALGRIND_RUN
 INSTANTIATE_TEST_CASE_P(
-    DBTestCompactionFilterWithCompactOption,
-    DBTestCompactionFilterWithCompactParam,
+    CompactionFilterWithOption, DBTestCompactionFilterWithCompactParam,
     ::testing::Values(DBTestBase::OptionConfig::kDefault,
                       DBTestBase::OptionConfig::kUniversalCompaction,
                       DBTestBase::OptionConfig::kUniversalCompactionMultiLevel,
@@ -56,7 +55,7 @@ INSTANTIATE_TEST_CASE_P(
                       DBTestBase::OptionConfig::kUniversalSubcompactions));
 #else
 // Run fewer cases in valgrind
-INSTANTIATE_TEST_CASE_P(DBTestCompactionFilterWithCompactOption,
+INSTANTIATE_TEST_CASE_P(CompactionFilterWithOption,
                         DBTestCompactionFilterWithCompactParam,
                         ::testing::Values(DBTestBase::OptionConfig::kDefault));
 #endif  // ROCKSDB_VALGRIND_RUN
@@ -720,7 +719,7 @@ TEST_F(DBTestCompactionFilter, CompactionFilterIgnoreSnapshot) {
   cfilter_count = 0;
   ASSERT_OK(db_->CompactRange(CompactRangeOptions(), nullptr, nullptr));
   // The filter should delete 40 records.
-  ASSERT_EQ(40U, cfilter_count);
+  ASSERT_EQ(40, cfilter_count);
 
   {
     // Scan the entire database as of the snapshot to ensure
@@ -864,10 +863,10 @@ TEST_F(DBTestCompactionFilter, IgnoreSnapshotsFalse) {
   delete options.compaction_filter;
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
-  rocksdb::port::InstallStackTraceHandler();
+  ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

@@ -10,12 +10,12 @@
 #include "db/log_writer.h"
 
 #include <stdint.h>
+#include "file/writable_file_writer.h"
 #include "rocksdb/env.h"
 #include "util/coding.h"
 #include "util/crc32c.h"
-#include "util/file_reader_writer.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 namespace log {
 
 Writer::Writer(std::unique_ptr<WritableFileWriter>&& dest, uint64_t log_number,
@@ -37,10 +37,10 @@ Writer::~Writer() {
   }
 }
 
-Status Writer::WriteBuffer() { return dest_->Flush(); }
+IOStatus Writer::WriteBuffer() { return dest_->Flush(); }
 
-Status Writer::Close() {
-  Status s;
+IOStatus Writer::Close() {
+  IOStatus s;
   if (dest_) {
     s = dest_->Close();
     dest_.reset();
@@ -48,7 +48,7 @@ Status Writer::Close() {
   return s;
 }
 
-Status Writer::AddRecord(const Slice& slice) {
+IOStatus Writer::AddRecord(const Slice& slice) {
   const char* ptr = slice.data();
   size_t left = slice.size();
 
@@ -59,7 +59,7 @@ Status Writer::AddRecord(const Slice& slice) {
   // Fragment the record if necessary and emit it.  Note that if slice
   // is empty, we still want to iterate once to emit a single
   // zero-length record
-  Status s;
+  IOStatus s;
   bool begin = true;
   do {
     const int64_t leftover = kBlockSize - block_offset_;
@@ -102,12 +102,19 @@ Status Writer::AddRecord(const Slice& slice) {
     left -= fragment_length;
     begin = false;
   } while (s.ok() && left > 0);
+
+  if (s.ok()) {
+    if (!manual_flush_) {
+      s = dest_->Flush();
+    }
+  }
+
   return s;
 }
 
 bool Writer::TEST_BufferIsEmpty() { return dest_->TEST_BufferIsEmpty(); }
 
-Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n) {
+IOStatus Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n) {
   assert(n <= 0xffff);  // Must fit in two bytes
 
   size_t header_size;
@@ -140,21 +147,18 @@ Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr, size_t n) {
   // Compute the crc of the record type and the payload.
   crc = crc32c::Extend(crc, ptr, n);
   crc = crc32c::Mask(crc);  // Adjust for storage
+  TEST_SYNC_POINT_CALLBACK("LogWriter::EmitPhysicalRecord:BeforeEncodeChecksum",
+                           &crc);
   EncodeFixed32(buf, crc);
 
   // Write the header and the payload
-  Status s = dest_->Append(Slice(buf, header_size));
+  IOStatus s = dest_->Append(Slice(buf, header_size));
   if (s.ok()) {
     s = dest_->Append(Slice(ptr, n));
-    if (s.ok()) {
-      if (!manual_flush_) {
-        s = dest_->Flush();
-      }
-    }
   }
   block_offset_ += header_size + n;
   return s;
 }
 
 }  // namespace log
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

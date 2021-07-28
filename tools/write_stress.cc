@@ -56,23 +56,19 @@ int main() {
 }
 #else
 
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS
-#endif // __STDC_FORMAT_MACROS
-
-#include <inttypes.h>
 #include <atomic>
+#include <cinttypes>
 #include <random>
 #include <set>
 #include <string>
 #include <thread>
 
+#include "file/filename.h"
 #include "port/port.h"
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
 #include "rocksdb/options.h"
 #include "rocksdb/slice.h"
-#include "util/filename.h"
 #include "util/gflags_compat.h"
 
 using GFLAGS_NAMESPACE::ParseCommandLineFlags;
@@ -108,7 +104,7 @@ DEFINE_bool(low_open_files_mode, false,
             "If true, we set max_open_files to 20, so that every file access "
             "needs to reopen it");
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 static const int kPrefixSize = 3;
 
@@ -296,13 +292,13 @@ class WriteStress {
   std::unique_ptr<DB> db_;
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
   SetUsageMessage(std::string("\nUSAGE:\n") + std::string(argv[0]) +
                   " [OPTIONS]...");
   ParseCommandLineFlags(&argc, &argv, true);
-  rocksdb::WriteStress write_stress;
+  ROCKSDB_NAMESPACE::WriteStress write_stress;
   return write_stress.Run();
 }
 

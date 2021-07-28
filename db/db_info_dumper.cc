@@ -3,22 +3,18 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS
-#endif
-
 #include "db/db_info_dumper.h"
 
-#include <inttypes.h>
 #include <stdio.h>
-#include <string>
 #include <algorithm>
+#include <cinttypes>
+#include <string>
 #include <vector>
 
+#include "file/filename.h"
 #include "rocksdb/env.h"
-#include "util/filename.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 void DumpDBFileSummary(const ImmutableDBOptions& options,
                        const std::string& dbname) {
@@ -124,4 +120,4 @@ void DumpDBFileSummary(const ImmutableDBOptions& options,
   Header(options.info_log, "Write Ahead Log file in %s: %s\n",
          options.wal_dir.c_str(), wal_info.c_str());
 }
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

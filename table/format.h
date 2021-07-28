@@ -10,25 +10,21 @@
 #pragma once
 #include <stdint.h>
 #include <string>
-#ifdef ROCKSDB_MALLOC_USABLE_SIZE
-#ifdef OS_FREEBSD
-#include <malloc_np.h>
-#else
-#include <malloc.h>
-#endif
-#endif
+#include "file/file_prefetch_buffer.h"
+#include "file/random_access_file_reader.h"
+
 #include "rocksdb/options.h"
 #include "rocksdb/slice.h"
 #include "rocksdb/status.h"
 #include "rocksdb/table.h"
 
+#include "memory/memory_allocator.h"
 #include "options/cf_options.h"
+#include "port/malloc.h"
 #include "port/port.h"  // noexcept
 #include "table/persistent_cache_options.h"
-#include "util/file_reader_writer.h"
-#include "util/memory_allocator.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class RandomAccessFile;
 struct ReadOptions;
@@ -42,6 +38,8 @@ const int kMagicNumberLengthByte = 8;
 // block or a meta block.
 class BlockHandle {
  public:
+  // Creates a block handle with special values indicating "uninitialized,"
+  // distinct from the "null" block handle.
   BlockHandle();
   BlockHandle(uint64_t offset, uint64_t size);
 
@@ -69,11 +67,47 @@ class BlockHandle {
   // Maximum encoding length of a BlockHandle
   enum { kMaxEncodedLength = 10 + 10 };
 
+  inline bool operator==(const BlockHandle& rhs) const {
+    return offset_ == rhs.offset_ && size_ == rhs.size_;
+  }
+  inline bool operator!=(const BlockHandle& rhs) const {
+    return !(*this == rhs);
+  }
+
  private:
   uint64_t offset_;
   uint64_t size_;
 
   static const BlockHandle kNullBlockHandle;
+};
+
+// Value in block-based table file index.
+//
+// The index entry for block n is: y -> h, [x],
+// where: y is some key between the last key of block n (inclusive) and the
+// first key of block n+1 (exclusive); h is BlockHandle pointing to block n;
+// x, if present, is the first key of block n (unshortened).
+// This struct represents the "h, [x]" part.
+struct IndexValue {
+  BlockHandle handle;
+  // Empty means unknown.
+  Slice first_internal_key;
+
+  IndexValue() = default;
+  IndexValue(BlockHandle _handle, Slice _first_internal_key)
+      : handle(_handle), first_internal_key(_first_internal_key) {}
+
+  // have_first_key indicates whether the `first_internal_key` is used.
+  // If previous_handle is not null, delta encoding is used;
+  // in this case, the two handles must point to consecutive blocks:
+  // handle.offset() ==
+  //     previous_handle->offset() + previous_handle->size() + kBlockTrailerSize
+  void EncodeTo(std::string* dst, bool have_first_key,
+                const BlockHandle* previous_handle) const;
+  Status DecodeFrom(Slice* input, bool have_first_key,
+                    const BlockHandle* previous_handle);
+
+  std::string ToString(bool hex, bool have_first_key) const;
 };
 
 inline uint32_t GetCompressFormatForVersion(CompressionType compression_type,
@@ -92,7 +126,7 @@ inline uint32_t GetCompressFormatForVersion(CompressionType compression_type,
 }
 
 inline bool BlockBasedTableSupportedVersion(uint32_t version) {
-  return version <= 4;
+  return version <= 5;
 }
 
 // Footer encapsulates the fixed information stored at the tail
@@ -189,11 +223,20 @@ Status ReadFooterFromFile(RandomAccessFileReader* file,
 // 1-byte type + 32-bit crc
 static const size_t kBlockTrailerSize = 5;
 
+// Make block size calculation for IO less error prone
+inline uint64_t block_size(const BlockHandle& handle) {
+  return handle.size() + kBlockTrailerSize;
+}
+
 inline CompressionType get_block_compression_type(const char* block_data,
                                                   size_t block_size) {
   return static_cast<CompressionType>(block_data[block_size]);
 }
 
+// Represents the contents of a block read from an SST file. Depending on how
+// it's created, it may or may not own the actual block bytes. As an example,
+// BlockContents objects representing data read from mmapped files only point
+// into the mmapped region.
 struct BlockContents {
   Slice data;  // Actual contents of data
   CacheAllocationPtr allocation;
@@ -206,16 +249,28 @@ struct BlockContents {
 
   BlockContents() {}
 
+  // Does not take ownership of the underlying data bytes.
   BlockContents(const Slice& _data) : data(_data) {}
 
+  // Takes ownership of the underlying data bytes.
   BlockContents(CacheAllocationPtr&& _data, size_t _size)
       : data(_data.get(), _size), allocation(std::move(_data)) {}
 
+  // Takes ownership of the underlying data bytes.
   BlockContents(std::unique_ptr<char[]>&& _data, size_t _size)
       : data(_data.get(), _size) {
     allocation.reset(_data.release());
   }
 
+  void GetDataOwnership(MemoryAllocator* allocator = nullptr) {
+    if (!own_bytes()) {
+      allocation = AllocateBlock(data.size(), allocator);
+      memcpy(allocation.get(), data.data(), data.size());
+      data.data_ = allocation.get();
+    }
+  }
+
+  // Returns whether the object has ownership of the underlying data bytes.
   bool own_bytes() const { return allocation.get() != nullptr; }
 
   // It's the caller's responsibility to make sure that this is
@@ -303,4 +358,4 @@ inline BlockHandle::BlockHandle()
 inline BlockHandle::BlockHandle(uint64_t _offset, uint64_t _size)
     : offset_(_offset), size_(_size) {}
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

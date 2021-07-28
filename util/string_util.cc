@@ -5,26 +5,22 @@
 //
 #include "util/string_util.h"
 
-#ifndef __STDC_FORMAT_MACROS
-#define __STDC_FORMAT_MACROS
-#endif
-
 #include <errno.h>
-#include <inttypes.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <algorithm>
+#include <cinttypes>
 #include <cmath>
 #include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
-#include "rocksdb/env.h"
 #include "port/port.h"
+#include "port/sys_time.h"
 #include "rocksdb/slice.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 const std::string kNullptrString = "nullptr";
 
@@ -143,6 +139,16 @@ std::string BytesToHumanString(uint64_t bytes) {
   return std::string(buf);
 }
 
+std::string TimeToHumanString(int unixtime) {
+  char time_buffer[80];
+  time_t rawtime = unixtime;
+  struct tm tInfo;
+  struct tm* timeinfo = localtime_r(&rawtime, &tInfo);
+  assert(timeinfo == &tInfo);
+  strftime(time_buffer, 80, "%c", timeinfo);
+  return std::string(time_buffer);
+}
+
 std::string EscapeString(const Slice& value) {
   std::string r;
   AppendEscapedStringTo(&r, value);
@@ -255,6 +261,20 @@ std::string trim(const std::string& str) {
     return str.substr(start, end - start + 1);
   }
   return std::string();
+}
+
+bool EndsWith(const std::string& string, const std::string& pattern) {
+  size_t plen = pattern.size();
+  size_t slen = string.size();
+  if (plen <= slen) {
+    return string.compare(slen - plen, plen, pattern) == 0;
+  } else {
+    return false;
+  }
+}
+
+bool StartsWith(const std::string& string, const std::string& pattern) {
+  return string.compare(0, pattern.size(), pattern) == 0;
 }
 
 #ifndef ROCKSDB_LITE
@@ -400,4 +420,4 @@ bool SerializeIntVector(const std::vector<int>& vec, std::string* value) {
   return true;
 }
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE

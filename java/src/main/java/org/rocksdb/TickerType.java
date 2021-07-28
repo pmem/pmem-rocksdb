@@ -717,6 +717,21 @@ public enum TickerType {
      */
     TXN_SNAPSHOT_MUTEX_OVERHEAD((byte) -0x0C),
 
+    /**
+     * # of times ::Get returned TryAgain due to expired snapshot seq
+     */
+    TXN_GET_TRY_AGAIN((byte) -0x0D),
+
+    /**
+     * # of files marked as trash by delete scheduler
+     */
+    FILES_MARKED_TRASH((byte) -0x0E),
+
+    /**
+     * # of files deleted immediately by delete scheduler
+     */
+    FILES_DELETED_IMMEDIATELY((byte) -0x0f),
+
     TICKER_ENUM_MAX((byte) 0x5F);
 
     private final byte value;
@@ -726,13 +741,30 @@ public enum TickerType {
     }
 
     /**
-     * @deprecated Exposes internal value of native enum mappings.
-     *     This method will be marked package private in the next major release.
+     * Returns the byte value of the enumerations value
      *
-     * @return the internal representation
+     * @return byte representation
      */
-    @Deprecated
     public byte getValue() {
         return value;
+    }
+
+    /**
+     * Get Ticker type by byte value.
+     *
+     * @param value byte representation of TickerType.
+     *
+     * @return {@link org.rocksdb.TickerType} instance.
+     * @throws java.lang.IllegalArgumentException if an invalid
+     *     value is provided.
+     */
+    public static TickerType getTickerType(final byte value) {
+        for (final TickerType tickerType : TickerType.values()) {
+            if (tickerType.getValue() == value) {
+                return tickerType;
+            }
+        }
+        throw new IllegalArgumentException(
+            "Illegal value provided for TickerType.");
     }
 }

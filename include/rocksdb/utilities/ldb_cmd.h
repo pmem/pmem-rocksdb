@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+
 #include <algorithm>
 #include <functional>
 #include <map>
@@ -16,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#include "rocksdb/convenience.h"
 #include "rocksdb/env.h"
 #include "rocksdb/iterator.h"
 #include "rocksdb/ldb_tool.h"
@@ -24,13 +26,15 @@
 #include "rocksdb/utilities/db_ttl.h"
 #include "rocksdb/utilities/ldb_cmd_execute_result.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 class LDBCommand {
  public:
   // Command-line arguments
+  static const std::string ARG_ENV_URI;
   static const std::string ARG_DB;
   static const std::string ARG_PATH;
+  static const std::string ARG_SECONDARY_PATH;
   static const std::string ARG_HEX;
   static const std::string ARG_KEY_HEX;
   static const std::string ARG_VALUE_HEX;
@@ -55,6 +59,7 @@ class LDBCommand {
   static const std::string ARG_FILE_SIZE;
   static const std::string ARG_CREATE_IF_MISSING;
   static const std::string ARG_NO_VALUE;
+  static const std::string ARG_DISABLE_CONSISTENCY_CHECKS;
 
   struct ParsedParams {
     std::string cmd;
@@ -73,7 +78,7 @@ class LDBCommand {
           SelectCommand);
 
   static LDBCommand* InitFromCmdLineArgs(
-      int argc, char** argv, const Options& options,
+      int argc, char const* const* argv, const Options& options,
       const LDBOptions& ldb_options,
       const std::vector<ColumnFamilyDescriptor>* column_families);
 
@@ -127,7 +132,12 @@ class LDBCommand {
 
  protected:
   LDBCommandExecuteResult exec_state_;
+  std::string env_uri_;
   std::string db_path_;
+  // If empty, open DB as primary. If non-empty, open the DB as secondary
+  // with this secondary path. When running against a database opened by
+  // another process, ldb wll leave the source directory completely intact.
+  std::string secondary_path_;
   std::string column_family_name_;
   DB* db_;
   DBWithTTL* db_ttl_;
@@ -154,7 +164,8 @@ class LDBCommand {
   // If true, try to construct options from DB's option files.
   bool try_load_options_;
 
-  bool ignore_unknown_options_;
+  // The value passed to options.force_consistency_checks.
+  bool force_consistency_checks_;
 
   bool create_if_missing_;
 
@@ -170,6 +181,9 @@ class LDBCommand {
 
   /** List of command-line options valid for this command */
   const std::vector<std::string> valid_cmd_line_options_;
+
+  /** Shared pointer to underlying environment if applicable **/
+  std::shared_ptr<Env> env_guard_;
 
   bool ParseKeyValue(const std::string& line, std::string* key,
                      std::string* value, bool is_key_hex, bool is_value_hex);
@@ -227,6 +241,7 @@ class LDBCommand {
 
   Options options_;
   std::vector<ColumnFamilyDescriptor> column_families_;
+  ConfigOptions config_options_;
   LDBOptions ldb_options_;
 
  private:
@@ -254,13 +269,16 @@ class LDBCommand {
 
 class LDBCommandRunner {
  public:
-  static void PrintHelp(const LDBOptions& ldb_options, const char* exec_name);
+  static void PrintHelp(const LDBOptions& ldb_options, const char* exec_name,
+                        bool to_stderr = true);
 
-  static void RunCommand(
-      int argc, char** argv, Options options, const LDBOptions& ldb_options,
+  // Returns the status code to return. 0 is no error.
+  static int RunCommand(
+      int argc, char const* const* argv, Options options,
+      const LDBOptions& ldb_options,
       const std::vector<ColumnFamilyDescriptor>* column_families);
 };
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 #endif  // ROCKSDB_LITE

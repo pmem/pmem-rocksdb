@@ -7,6 +7,9 @@
 #include <memory>
 #include <iostream>
 
+#include "db/db_impl/db_impl.h"
+#include "db/dbformat.h"
+#include "db/write_batch_internal.h"
 #include "port/stack_trace.h"
 #include "rocksdb/cache.h"
 #include "rocksdb/comparator.h"
@@ -14,13 +17,10 @@
 #include "rocksdb/env.h"
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/utilities/db_ttl.h"
-#include "db/dbformat.h"
-#include "db/db_impl.h"
-#include "db/write_batch_internal.h"
+#include "test_util/testharness.h"
 #include "utilities/merge_operators.h"
-#include "util/testharness.h"
 
-namespace rocksdb {
+namespace ROCKSDB_NAMESPACE {
 
 bool use_compression;
 
@@ -346,7 +346,7 @@ void testPartialMerge(Counters* counters, DB* db, size_t max_merge,
   // Test case 2: partial merge should not be called when a put is found.
   resetNumPartialMergeCalls();
   tmp_sum = 0;
-  db->Put(rocksdb::WriteOptions(), "c", "10");
+  db->Put(ROCKSDB_NAMESPACE::WriteOptions(), "c", "10");
   for (size_t i = 1; i <= count; i++) {
     counters->assert_add("c", i);
     tmp_sum += i;
@@ -490,15 +490,15 @@ TEST_F(MergeTest, MergeDbTtlTest) {
 }
 #endif  // !ROCKSDB_LITE
 
-}  // namespace rocksdb
+}  // namespace ROCKSDB_NAMESPACE
 
 int main(int argc, char** argv) {
-  rocksdb::use_compression = false;
+  ROCKSDB_NAMESPACE::use_compression = false;
   if (argc > 1) {
-    rocksdb::use_compression = true;
+    ROCKSDB_NAMESPACE::use_compression = true;
   }
 
-  rocksdb::port::InstallStackTraceHandler();
+  ROCKSDB_NAMESPACE::port::InstallStackTraceHandler();
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
