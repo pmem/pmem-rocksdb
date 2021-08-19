@@ -41,7 +41,7 @@ struct Pool {
 };
 
 struct PobjAction : pobj_action {
-  unsigned int pool_index;
+  size_t pool_index;
 };
 
 static struct Pool* pools_ = nullptr;
@@ -113,7 +113,7 @@ bool KVSEnabled() {
   return pools_ != nullptr;
 }
 
-static bool ReservePmem(size_t size, unsigned int* p_pool_index, PMEMoid* p_oid,
+static bool ReservePmem(size_t size, size_t* p_pool_index, PMEMoid* p_oid,
                         struct PobjAction* pact) {
   size_t pool_index = (next_pool_index_++) % pool_count_;
   size_t retry_loop = pool_count_;
@@ -281,7 +281,7 @@ void KVSDecodeValueRef(const char* input, size_t size, std::string* dst) {
       char* tmp_buf = new char[dst_len];
       Snappy_Uncompress(src_data, src_len, tmp_buf);
       dst->assign(tmp_buf, dst_len);
-      delete tmp_buf;
+      delete[] tmp_buf;
     } else {
       abort();
     }
