@@ -43,7 +43,6 @@ DCPMMMmapFile::DCPMMMmapFile(const std::string& fname, int fd, size_t page_size,
       base_(nullptr),
       limit_(nullptr),
       dst_(nullptr),
-      last_sync_(nullptr),
       file_offset_(0) {
 #ifdef ROCKSDB_FALLOCATE_PRESENT
   allow_fallocate_ = options.allow_fallocate;

@@ -30,7 +30,6 @@ class DCPMMMmapFile : public FSWritableFile {
   char* base_;
   char* limit_;
   char* dst_;
-  char* last_sync_;
   uint64_t file_offset_;
 #ifdef ROCKSDB_FALLOCATE_PRESENT
   bool allow_fallocate_;  // If false, fallocate calls are bypassed

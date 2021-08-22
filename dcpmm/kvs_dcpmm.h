@@ -25,8 +25,8 @@ struct KVSRef {
   // Specify the encoding type of value content.
   struct KVSHdr hdr;
   // The size of value after encoding.
-  unsigned int size;
-  unsigned int pool_index;
+  size_t size;
+  size_t pool_index;
   // The offset of value on DCPMM in the pool.
   size_t off_in_pool;
 };

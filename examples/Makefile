@@ -12,6 +12,9 @@ ifneq ($(USE_RTTI), 1)
 	CXXFLAGS += -fno-rtti
 endif
 
+include ../dcpmm.mk
+EXEC_LDFLAGS += $(LDFLAGS)
+
 .PHONY: clean librocksdb
 
 all: simple_example column_families_example compact_files_example c_simple_example optimistic_transaction_example transaction_example compaction_filter_example options_file_example

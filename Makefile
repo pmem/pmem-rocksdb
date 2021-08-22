@@ -217,12 +217,7 @@ LIB_SOURCES += utilities/env_librados.cc
 LDFLAGS += -lrados
 endif
 
-ROCKSDB_ON_DCPMM := 1
-
-ifdef ROCKSDB_ON_DCPMM
-LDFLAGS += -L/usr/local/lib/ -L/usr/local/lib64/ -lpmem -lpmemobj
-CXXFLAGS += -I/usr/local/include -DON_DCPMM
-endif
+include dcpmm.mk
 
 AM_LINK = $(AM_V_CCLD)$(CXX) $^ $(EXEC_LDFLAGS) -o $@ $(LDFLAGS) $(COVERAGEFLAGS)
 
