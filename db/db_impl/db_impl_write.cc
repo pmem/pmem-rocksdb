@@ -918,6 +918,7 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
 
   if (UNLIKELY(status.ok() && (write_controller_.IsStopped() ||
                                write_controller_.NeedsDelay()))) {
+                                 /*
     static long stop = 0;
     static long delay = 0;
     if(write_controller_.IsStopped()) {
@@ -927,7 +928,7 @@ Status DBImpl::PreprocessWrite(const WriteOptions& write_options,
       delay++;
       if(delay % 1000==0) std::cout<<"delay "<<delay<<std::endl;
 
-    }
+    }*/
     PERF_TIMER_STOP(write_pre_and_post_process_time);
     PERF_TIMER_GUARD(write_delay_time);
     // We don't know size of curent batch so that we always use the size
