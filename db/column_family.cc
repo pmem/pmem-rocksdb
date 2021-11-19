@@ -900,7 +900,7 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
           name_.c_str(), compaction_needed_bytes);
     } else if (write_stall_condition == WriteStallCondition::kDelayed &&
                write_stall_cause == WriteStallCause::kMemtableLimit) {
-      std::cout<<"setup delay for memtable"<<std::endl;
+      // std::cout<<"setup delay for memtable"<<std::endl;
       write_controller_token_ =
           SetupDelay(write_controller, compaction_needed_bytes,
                      prev_compaction_needed_bytes_, was_stopped,
@@ -919,7 +919,7 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
       // L0 is the last two files from stopping.
       bool near_stop = vstorage->l0_delay_trigger_count() >=
                        mutable_cf_options.level0_stop_writes_trigger - 2;
-      std::cout<<"setup delay for l0"<<std::endl;
+      // std::cout<<"setup delay for l0"<<std::endl;
       write_controller_token_ =
           SetupDelay(write_controller, compaction_needed_bytes,
                      prev_compaction_needed_bytes_, was_stopped || near_stop,
@@ -947,7 +947,7 @@ WriteStallCondition ColumnFamilyData::RecalculateWriteStallConditions(
               3 * (mutable_cf_options.hard_pending_compaction_bytes_limit -
                    mutable_cf_options.soft_pending_compaction_bytes_limit) /
                   4;
-      std::cout<<"setup delay for pending compaction bytes"<<std::endl;
+      // std::cout<<"setup delay for pending compaction bytes"<<std::endl;
       write_controller_token_ =
           SetupDelay(write_controller, compaction_needed_bytes,
                      prev_compaction_needed_bytes_, was_stopped || near_stop,
