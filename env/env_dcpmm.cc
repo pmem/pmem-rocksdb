@@ -28,11 +28,11 @@
 namespace rocksdb {
 
 #ifndef MAP_SYNC
-#define MAP_SYNC 0x80000
+#define MAP_SYNC MAP_SHARED
 #endif
 
 #ifndef MAP_SHARED_VALIDATE
-#define MAP_SHARED_VALIDATE 0x03
+#define MAP_SHARED_VALIDATE MAP_SHARED
 #endif
 
 DCPMMMmapFile::DCPMMMmapFile(const std::string& fname, int fd, size_t page_size,
